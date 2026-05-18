@@ -99,16 +99,7 @@ export const useFareStore = create<FareStore>((set, get) => ({
         const classes = f.classes.map((c) =>
           c.classCode === classCode ? { ...c, currentPrice: newPrice } : c
         );
-        const historyEntry: PriceHistoryDTO = {
-          id: `PH-${Date.now()}`,
-          fareTierId: `${flightId}-${classCode}`,
-          classCode,
-          changeType: 'MANUAL',
-          priceBefore: oldPrice,
-          priceAfter: newPrice,
-          changedBy: 'RM',
-          changedAt: new Date().toISOString(),
-        };
+        void oldPrice;
         return { ...f, classes };
       });
       const newHistory: PriceHistoryDTO = {

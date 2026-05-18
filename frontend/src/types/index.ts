@@ -81,7 +81,7 @@ export interface SimulationParamsDTO {
   route: string;
   date: string;
   fuelChangePercent: number;
-  newCompetitorEntry: boolean;
+  exchangeRatePercent: number;
   priceChangePercent: number;
 }
 

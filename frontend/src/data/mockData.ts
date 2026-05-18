@@ -209,7 +209,7 @@ export const revenueHistory: RevenueDataPoint[] = [
 
 // ── 대시보드 전용 타입 ──────────────────────────────────────────────────────
 export type DashboardClassStatus = "Open" | "Closed" | "Sold Out";
-export type FlightStatus = "수요 급증" | "안정적" | "수요 저조" | "위험";
+export type FlightStatus = "수요 급증" | "안정적" | "수요 저조" | "매진임박";
 
 export interface DashboardClass {
   name: string;
@@ -267,7 +267,7 @@ export const KE_DOMESTIC_ROUTES = [
   "ICN-CJU", "ICN-PUS", "GMP-KPO", "GMP-RSU",
 ];
 
-// B737-900ER: 일등석 4석 / 프레스티지석 16석 / 일반석 133석 / 특가할인 20석
+// B737-900: 프레스티지 8석 / 일반석 정상 30석 / 일반석 할인 85석 / 일반석 특가 50석 = 173석
 export function buildDashboardFlights(route: string): DashboardFlight[] {
   const routeMultiplier: Record<string, number> = {
     "GMP-CJU": 1.15, "ICN-CJU": 1.1, "GMP-PUS": 0.9,
@@ -285,12 +285,12 @@ export function buildDashboardFlights(route: string): DashboardFlight[] {
       aiRecommended: Math.round(base * 1.39),
       baseCost: Math.round(11500000 * mul),
       classes: [
-        { name: "일등석", code: "F", seats: 4, sold: 4, price: Math.round(base * 3.2), aiPrice: Math.round(base * 3.5), status: "Sold Out" },
-        { name: "프레스티지석", code: "C", seats: 16, sold: 14, price: Math.round(base * 1.94), aiPrice: Math.round(base * 2.12), status: "Open" },
-        { name: "일반석", code: "Y", seats: 133, sold: 118, price: Math.round(base * 1.24), aiPrice: Math.round(base * 1.39), status: "Open" },
-        { name: "특가할인", code: "V", seats: 20, sold: 18, price: Math.round(base * 0.73), aiPrice: Math.round(base * 0.73), status: "Closed" },
+        { name: "프레스티지", code: "C", seats: 8, sold: 7, price: Math.round(base * 1.94), aiPrice: Math.round(base * 2.12), status: "Open" },
+        { name: "일반석 정상", code: "Y", seats: 30, sold: 28, price: Math.round(base * 1.24), aiPrice: Math.round(base * 1.39), status: "Open" },
+        { name: "일반석 할인", code: "M", seats: 85, sold: 75, price: Math.round(base * 0.95), aiPrice: Math.round(base * 1.05), status: "Open" },
+        { name: "일반석 특가", code: "V", seats: 50, sold: 42, price: Math.round(base * 0.73), aiPrice: Math.round(base * 0.73), status: "Closed" },
       ],
-      reason: "출발 7일 전, 예약 페이스가 과거 평균 대비 15% 빠름. 일등석 매진, 프레스티지석 거의 마감. 일반석 운임 즉시 인상 권고.",
+      reason: "출발 7일 전, 예약 페이스가 과거 평균 대비 15% 빠름. 프레스티지 거의 마감. 일반석 정상 운임 즉시 인상 권고.",
     },
     {
       id: "KE1205", time: "10:15", timeSlot: "오전", status: "안정적",
@@ -299,10 +299,10 @@ export function buildDashboardFlights(route: string): DashboardFlight[] {
       aiRecommended: base,
       baseCost: Math.round(10800000 * mul),
       classes: [
-        { name: "일등석", code: "F", seats: 4, sold: 1, price: Math.round(base * 3.0), aiPrice: Math.round(base * 3.0), status: "Open" },
-        { name: "프레스티지석", code: "C", seats: 16, sold: 5, price: Math.round(base * 1.82), aiPrice: Math.round(base * 1.82), status: "Open" },
-        { name: "일반석", code: "Y", seats: 133, sold: 87, price: Math.round(base * 1.12), aiPrice: Math.round(base * 1.12), status: "Open" },
-        { name: "특가할인", code: "V", seats: 20, sold: 13, price: Math.round(base * 0.68), aiPrice: Math.round(base * 0.68), status: "Open" },
+        { name: "프레스티지", code: "C", seats: 8, sold: 3, price: Math.round(base * 1.82), aiPrice: Math.round(base * 1.82), status: "Open" },
+        { name: "일반석 정상", code: "Y", seats: 30, sold: 18, price: Math.round(base * 1.12), aiPrice: Math.round(base * 1.12), status: "Open" },
+        { name: "일반석 할인", code: "M", seats: 85, sold: 55, price: Math.round(base * 0.88), aiPrice: Math.round(base * 0.88), status: "Open" },
+        { name: "일반석 특가", code: "V", seats: 50, sold: 31, price: Math.round(base * 0.68), aiPrice: Math.round(base * 0.68), status: "Open" },
       ],
       reason: "전형적인 비선호 시간대 패턴. 전 클래스 인벤토리 개방 유지 권고. 현재 운임 수준 적정.",
     },
@@ -313,26 +313,26 @@ export function buildDashboardFlights(route: string): DashboardFlight[] {
       aiRecommended: Math.round(base * 0.85),
       baseCost: Math.round(10200000 * mul),
       classes: [
-        { name: "일등석", code: "F", seats: 4, sold: 0, price: Math.round(base * 2.8), aiPrice: Math.round(base * 2.6), status: "Open" },
-        { name: "프레스티지석", code: "C", seats: 16, sold: 3, price: Math.round(base * 1.71), aiPrice: Math.round(base * 1.65), status: "Open" },
-        { name: "일반석", code: "Y", seats: 133, sold: 52, price: Math.round(base * 1.05), aiPrice: Math.round(base * 0.97), status: "Open" },
-        { name: "특가할인", code: "V", seats: 20, sold: 18, price: Math.round(base * 0.58), aiPrice: Math.round(base * 0.55), status: "Open" },
+        { name: "프레스티지", code: "C", seats: 8, sold: 1, price: Math.round(base * 1.71), aiPrice: Math.round(base * 1.65), status: "Open" },
+        { name: "일반석 정상", code: "Y", seats: 30, sold: 10, price: Math.round(base * 1.05), aiPrice: Math.round(base * 0.97), status: "Open" },
+        { name: "일반석 할인", code: "M", seats: 85, sold: 35, price: Math.round(base * 0.82), aiPrice: Math.round(base * 0.76), status: "Open" },
+        { name: "일반석 특가", code: "V", seats: 50, sold: 32, price: Math.round(base * 0.58), aiPrice: Math.round(base * 0.55), status: "Open" },
       ],
-      reason: "예약 유입 속도 저조. 특가할인 클래스 공급 확대 및 일반석 운임 인하 필요. 일등석 프로모션 고려.",
+      reason: "예약 유입 속도 저조. 일반석 특가 공급 확대 및 일반석 할인 운임 인하 필요.",
     },
     {
-      id: "KE1223", time: "18:20", timeSlot: "저녁", status: "위험",
+      id: "KE1223", time: "18:20", timeSlot: "저녁", status: "매진임박",
       lf: 94, pace: "+20%",
       currentPrice: Math.round(base * 1.32),
       aiRecommended: Math.round(base * 1.59),
       baseCost: Math.round(12000000 * mul),
       classes: [
-        { name: "일등석", code: "F", seats: 4, sold: 4, price: Math.round(base * 3.4), aiPrice: Math.round(base * 3.8), status: "Sold Out" },
-        { name: "프레스티지석", code: "C", seats: 16, sold: 16, price: Math.round(base * 2.06), aiPrice: Math.round(base * 2.35), status: "Sold Out" },
-        { name: "일반석", code: "Y", seats: 133, sold: 129, price: Math.round(base * 1.32), aiPrice: Math.round(base * 1.59), status: "Open" },
-        { name: "특가할인", code: "V", seats: 20, sold: 16, price: Math.round(base * 0.81), aiPrice: Math.round(base * 0.81), status: "Closed" },
+        { name: "프레스티지", code: "C", seats: 8, sold: 8, price: Math.round(base * 2.06), aiPrice: Math.round(base * 2.35), status: "Sold Out" },
+        { name: "일반석 정상", code: "Y", seats: 30, sold: 30, price: Math.round(base * 1.32), aiPrice: Math.round(base * 1.59), status: "Sold Out" },
+        { name: "일반석 할인", code: "M", seats: 85, sold: 82, price: Math.round(base * 1.02), aiPrice: Math.round(base * 1.18), status: "Open" },
+        { name: "일반석 특가", code: "V", seats: 50, sold: 43, price: Math.round(base * 0.81), aiPrice: Math.round(base * 0.81), status: "Closed" },
       ],
-      reason: "일등석·프레스티지석 전석 매진. 일반석 잔여 4석. 특가할인 즉시 마감 후 일반석 운임 즉시 인상 필요.",
+      reason: "프레스티지·일반석 정상 전석 매진. 일반석 할인 잔여 3석. 일반석 특가 즉시 마감 후 할인 운임 즉시 인상 필요.",
     },
   ];
 }

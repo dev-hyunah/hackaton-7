@@ -90,7 +90,7 @@ export default function Report() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               data-testid="download-pdf-btn"
-              onClick={() => downloadPdf(reportData.reportId)}
+              onClick={() => void downloadPdf(reportData.reportId)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
             >
               <Download size={15} />PDF 다운로드

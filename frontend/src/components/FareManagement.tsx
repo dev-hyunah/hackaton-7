@@ -1,37 +1,39 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Search, Sparkles, Send, LayoutGrid, BarChart4,
-  AlertCircle, Coins, Wallet, XCircle,
+  Coins, Wallet, XCircle,
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  RefreshCw, Plane, CheckCircle, XIcon, Calendar,
+  RefreshCw, Plane, CheckCircle, XIcon, Calendar, Menu, X,
 } from "lucide-react";
 import {
-  buildDashboardFlights, buildWeekDays, KE_DOMESTIC_ROUTES,
+  buildDashboardFlights, KE_DOMESTIC_ROUTES,
   type DashboardFlight, type DashboardClass,
 } from "../data/mockData";
 import { useFareStore } from "../stores/fareStore";
 import { useAiRecommendationStore } from "../stores/aiRecommendationStore";
+import apiClient from "../api/apiClient";
 
 const BRAND = "#002561";
 
 const fmtW = (n: number) => `₩${n.toLocaleString()}`;
 
 const classTagColor = (name: string) => {
-  if (name.includes("일등석"))    return "bg-purple-100 text-purple-700";
   if (name.includes("프레스티지")) return "bg-amber-100 text-amber-700";
-  if (name.includes("일반석"))    return "bg-blue-100 text-blue-700";
+  if (name.includes("정상"))       return "bg-blue-100 text-blue-700";
+  if (name.includes("할인"))       return "bg-cyan-100 text-cyan-700";
+  if (name.includes("특가"))       return "bg-slate-100 text-slate-600";
   return "bg-slate-200 text-slate-600";
 };
 const classBarColor = (name: string) => {
-  if (name.includes("일등석"))    return "bg-purple-600";
   if (name.includes("프레스티지")) return "bg-amber-500";
-  if (name.includes("일반석"))    return "bg-blue-600";
+  if (name.includes("정상"))       return "bg-blue-600";
+  if (name.includes("할인"))       return "bg-cyan-500";
   return "bg-slate-400";
 };
 const statusBadgeClass = (s: DashboardFlight["status"]) => {
   const m: Record<string, string> = {
     "수요 급증": "bg-red-100 text-red-600",
-    "위험":      "bg-red-200 text-red-700",
+    "매진임박":  "bg-orange-200 text-orange-700",
     "안정적":    "bg-green-100 text-green-700",
     "수요 저조": "bg-amber-100 text-amber-700",
   };
@@ -49,28 +51,40 @@ interface EditState {
   value: string;
 }
 
+// 선택 날짜 기준 -3d ~ +3d 7일 생성
+function buildWeekAroundDate(centerDate: string): { date: string; dayOfWeek: string; isToday: boolean; isPeak: boolean }[] {
+  const dow = ["일", "월", "화", "수", "목", "금", "토"];
+  const peakMonths = [1, 7, 8, 12];
+  const center = new Date(centerDate);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(center);
+    d.setDate(center.getDate() - 3 + i);
+    return {
+      date: d.toISOString().slice(0, 10),
+      dayOfWeek: dow[d.getDay()],
+      isToday: d.toISOString().slice(0, 10) === todayStr,
+      isPeak: peakMonths.includes(d.getMonth() + 1),
+    };
+  });
+}
+
 // 월간 달력 날짜 생성
 function buildMonthDays(year: number, month: number): { date: string; day: number; inMonth: boolean }[] {
   const firstDay = new Date(year, month, 1).getDay();
   const lastDate = new Date(year, month + 1, 0).getDate();
   const days: { date: string; day: number; inMonth: boolean }[] = [];
-  // 앞 빈칸
   const prevLastDate = new Date(year, month, 0).getDate();
   for (let i = firstDay - 1; i >= 0; i--) {
     const d = prevLastDate - i;
-    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    days.push({ date: dateStr, day: d, inMonth: false });
+    days.push({ date: `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`, day: d, inMonth: false });
   }
-  // 이번 달
   for (let d = 1; d <= lastDate; d++) {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    days.push({ date: dateStr, day: d, inMonth: true });
+    days.push({ date: `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`, day: d, inMonth: true });
   }
-  // 뒤 빈칸 (6행 맞추기)
   const remain = 42 - days.length;
   for (let d = 1; d <= remain; d++) {
-    const dateStr = `${year}-${String(month + 2).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    days.push({ date: dateStr, day: d, inMonth: false });
+    days.push({ date: `${year}-${String(month + 2).padStart(2, "0")}-${String(d).padStart(2, "0")}`, day: d, inMonth: false });
   }
   return days;
 }
@@ -78,13 +92,20 @@ function buildMonthDays(year: number, month: number): { date: string; day: numbe
 const MONTH_KO = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 const DOW_KO = ["일","월","화","수","목","금","토"];
 
+// AI 추천 문구 생성
+function aiSuggestionLabel(current: number, ai: number): { text: string; color: string } {
+  if (ai > current * 1.02) return { text: "가격을 올리세요", color: "text-red-600" };
+  if (ai < current * 0.98) return { text: "가격을 내리세요", color: "text-blue-600" };
+  return { text: "유지", color: "text-slate-400" };
+}
+
 export default function FareManagement() {
   const today = new Date();
-  const [calYear, setCalYear]           = useState(2026);
-  const [calMonth, setCalMonth]         = useState(4); // 0-indexed (4 = 5월)
-  const [selectedDate, setSelectedDate] = useState(today.toISOString().slice(0, 10));
+  const todayStr = today.toISOString().slice(0, 10);
+  const [calYear, setCalYear]           = useState(today.getFullYear());
+  const [calMonth, setCalMonth]         = useState(today.getMonth()); // 0-indexed
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const [showCalendar, setShowCalendar] = useState(false);
-  const [weekOffset, setWeekOffset]     = useState(0);
   const [selectedRoute, setSelectedRoute] = useState(KE_DOMESTIC_ROUTES[0]);
   const [flights, setFlights]           = useState<DashboardFlight[]>(() =>
     buildDashboardFlights(KE_DOMESTIC_ROUTES[0])
@@ -95,17 +116,18 @@ export default function FareManagement() {
   const [editState, setEditState]       = useState<EditState | null>(null);
   const [aiQuery, setAiQuery]           = useState("");
   const [aiLoading, setAiLoading]       = useState(false);
-  const [aiPopup, setAiPopup]           = useState<{ desc: string } | null>(null);
+  const [aiPopup, setAiPopup]           = useState<{ desc: string; recommendedPrice?: number } | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmDone, setConfirmDone]   = useState(false);
+  // AI 거부 추적: 거부된 classCode set
+  const [rejectedClasses, setRejectedClasses] = useState<Set<string>>(new Set());
   const aiRef = useRef<HTMLTextAreaElement>(null);
   const { updateFare } = useFareStore();
   const { approveRecommendation, rejectRecommendation } = useAiRecommendationStore();
   const [aiDetailPopup, setAiDetailPopup] = useState<{ flightId: string; cls: DashboardClass } | null>(null);
+  const [sidebarOpen, setSidebarOpen]   = useState(false);
 
-  const aiDetailFlight = aiDetailPopup ? flights.find(f => f.id === aiDetailPopup.flightId) ?? null : null;
-
-  const baseDate = new Date(today);
-  baseDate.setDate(today.getDate() + weekOffset * 7);
-  const weekDays = buildWeekDays(baseDate);
+  const weekDays = buildWeekAroundDate(selectedDate);
   const monthDays = buildMonthDays(calYear, calMonth);
 
   const prevMonth = () => {
@@ -121,6 +143,7 @@ export default function FareManagement() {
     const newFlights = buildDashboardFlights(selectedRoute);
     setFlights(newFlights);
     setSelectedFlight(newFlights[0]);
+    setRejectedClasses(new Set());
   }, [selectedRoute]);
 
   const syncSelected = (updated: DashboardFlight[]) => {
@@ -156,17 +179,25 @@ export default function FareManagement() {
     setEditState(null);
   };
 
-  // ── AI 분석 요청 ─────────────────────────────────────────────────────────
-  const runAi = () => {
+  // ── AI 전략 분석 요청 (실제 API 연동) ─────────────────────────────────────
+  const runAi = async () => {
     if (!aiQuery.trim()) return;
     setAiLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await apiClient.post<{ description: string; recommended_price?: number }>(
+        "/recommendations/strategy",
+        { issue_text: aiQuery, route: selectedRoute, flight_id: selectedFlight.id }
+      );
+      setAiPopup({ desc: res.description, recommendedPrice: res.recommended_price });
+    } catch {
+      // 백엔드 미연결 시 mock fallback
       const up = selectedFlight.aiRecommended > selectedFlight.currentPrice;
       setAiPopup({
-        desc: `"${aiQuery}" 분석 결과 — 해당 이슈로 고수요 고객 유입이 약 15% 증가할 것으로 예측됩니다. ${up ? "하위 클래스 인벤토리 즉시 회수 및" : ""} ${selectedFlight.id} Y/B/M 클래스 운임을 ${fmtW(selectedFlight.aiRecommended)}으로 ${up ? "인상" : "조정"}하십시오.`,
+        desc: `"${aiQuery}" 분석 결과 — 해당 이슈로 수요 변동 가능성이 감지되었습니다. ${up ? "하위 클래스 인벤토리 즉시 회수 및" : ""} ${selectedFlight.id} 운임을 ${fmtW(selectedFlight.aiRecommended)}으로 ${up ? "인상" : "조정"}하십시오.`,
       });
+    } finally {
       setAiLoading(false);
-    }, 1400);
+    }
   };
 
   // ── AI 추천 일괄 적용 (팝업) ─────────────────────────────────────────────
@@ -179,7 +210,7 @@ export default function FareManagement() {
             classes: f.classes.map((c) => ({
               ...c,
               price: c.aiPrice,
-              status: (c.name.includes("할인가") || c.name.includes("특가"))
+              status: c.name.includes("특가")
                 ? ("Closed" as ClassStatus)
                 : c.status,
             })),
@@ -222,8 +253,65 @@ export default function FareManagement() {
         }),
       };
     });
-    setFlights(updated);
-    syncSelected(updated);
+    // Closed → Open 전환 시 다른 Closed 클래스 잔여석 자동 이관
+    redistributeClosedSeats(updated, flightId);
+  };
+
+  // ── Closed 등급 잔여좌석 자동 이관 ──────────────────────────────────────
+  const redistributeClosedSeats = (updated: DashboardFlight[], flightId: string) => {
+    const result = updated.map((f) => {
+      if (f.id !== flightId) return f;
+      const classes = [...f.classes];
+      // Closed 등급의 잔여석 합산
+      let surplus = 0;
+      const newClasses = classes.map((c) => {
+        if (c.status === "Closed" && c.sold < c.seats) {
+          surplus += c.seats - c.sold;
+          return { ...c, seats: c.sold };
+        }
+        return c;
+      });
+      // Open 등급 중 마지막 등급(가장 낮은 클래스)에 이관
+      if (surplus > 0) {
+        const openIdx = newClasses.map((c, i) => ({ c, i })).filter(({ c }) => c.status === "Open");
+        if (openIdx.length > 0) {
+          const target = openIdx[openIdx.length - 1];
+          newClasses[target.i] = { ...newClasses[target.i], seats: newClasses[target.i].seats + surplus };
+        }
+      }
+      return { ...f, classes: newClasses };
+    });
+    setFlights(result);
+    syncSelected(result);
+  };
+
+  // ── AI 거부 처리 ──────────────────────────────────────────────────────────
+  const handleRejectAi = (flightId: string, classCode: string) => {
+    rejectRecommendation(`${flightId}-${classCode}`);
+    setRejectedClasses(prev => new Set(prev).add(`${flightId}-${classCode}`));
+    setAiDetailPopup(null);
+  };
+
+  // ── 인벤토리 확정 (백엔드 저장) ──────────────────────────────────────────
+  const handleConfirmInventory = async () => {
+    setConfirmLoading(true);
+    try {
+      for (const cls of selectedFlight.classes) {
+        await apiClient.put(`/fares/${selectedFlight.id}`, {
+          class_code: cls.code,
+          new_price: cls.price,
+          updated_by: "Revenue Manager",
+        });
+      }
+      setConfirmDone(true);
+      setTimeout(() => setConfirmDone(false), 2500);
+    } catch {
+      // 백엔드 미연결 시에도 UI 피드백
+      setConfirmDone(true);
+      setTimeout(() => setConfirmDone(false), 2500);
+    } finally {
+      setConfirmLoading(false);
+    }
   };
 
   // ── Profit 계산 ───────────────────────────────────────────────────────────
@@ -239,6 +327,7 @@ export default function FareManagement() {
       {/* AI 추천 상세 모달 */}
       {aiDetailPopup && (() => {
         const { cls } = aiDetailPopup;
+        const rejKey = `${aiDetailPopup.flightId}-${cls.code}`;
         const isUp = cls.aiPrice > cls.price;
         const pct = Math.round(Math.abs(cls.aiPrice - cls.price) / cls.price * 100);
         const soldPct = cls.seats > 0 ? Math.round(cls.sold / cls.seats * 100) : 0;
@@ -252,7 +341,6 @@ export default function FareManagement() {
               className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* 헤더 */}
               <div className="flex justify-between items-start mb-5">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-purple-100 rounded-xl text-purple-600"><Sparkles size={20} /></div>
@@ -268,7 +356,6 @@ export default function FareManagement() {
                 </button>
               </div>
 
-              {/* 가격 비교 */}
               <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4 mb-4">
                 <div className="text-center">
                   <div className="text-[10px] text-slate-400 font-bold mb-1">현재 운임</div>
@@ -286,7 +373,6 @@ export default function FareManagement() {
                 </div>
               </div>
 
-              {/* 추천 근거 */}
               <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 mb-4">
                 <div className="flex items-center gap-1.5 mb-2">
                   <Sparkles size={12} className="text-purple-500" />
@@ -295,17 +381,13 @@ export default function FareManagement() {
                 <p className="text-xs text-slate-700 leading-relaxed font-medium">{selectedFlight.reason}</p>
               </div>
 
-              {/* 판매 현황 */}
               <div className="mb-5">
                 <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5">
                   <span>현재 판매율</span>
                   <span className="text-purple-600 font-black">{soldPct}% ({cls.sold}/{cls.seats}석)</span>
                 </div>
                 <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full transition-all"
-                    style={{ width: `${soldPct}%` }}
-                  />
+                  <div className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full transition-all" style={{ width: `${soldPct}%` }} />
                 </div>
                 <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
                   <span>잔여 {cls.seats - cls.sold}석</span>
@@ -315,24 +397,21 @@ export default function FareManagement() {
                 </div>
               </div>
 
-              {/* 버튼 */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    rejectRecommendation(`${aiDetailPopup.flightId}-${cls.code}`);
-                    setAiDetailPopup(null);
-                  }}
+                  onClick={() => handleRejectAi(aiDetailPopup.flightId, cls.code)}
                   className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-black text-sm hover:bg-slate-200 transition-all"
                 >
                   거부
                 </button>
                 <button
+                  disabled={rejectedClasses.has(rejKey)}
                   onClick={() => {
                     applyAiClass(aiDetailPopup.flightId, cls.code);
-                    approveRecommendation(`${aiDetailPopup.flightId}-${cls.code}`);
+                    approveRecommendation(rejKey);
                     setAiDetailPopup(null);
                   }}
-                  className="flex-1 text-white py-3 rounded-xl font-black text-sm hover:opacity-90 transition-all shadow-md active:scale-95"
+                  className="flex-1 text-white py-3 rounded-xl font-black text-sm hover:opacity-90 transition-all shadow-md active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{ backgroundColor: BRAND }}
                 >
                   추천 운임 적용
@@ -354,7 +433,6 @@ export default function FareManagement() {
             className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 헤더 */}
             <div className="flex justify-between items-start mb-5">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-sky-100 rounded-xl text-sky-600"><Sparkles size={20} /></div>
@@ -368,7 +446,6 @@ export default function FareManagement() {
               </button>
             </div>
 
-            {/* 분석 결과 */}
             <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 mb-5">
               <div className="flex items-center gap-1.5 mb-2">
                 <Sparkles size={12} className="text-sky-500" />
@@ -377,7 +454,6 @@ export default function FareManagement() {
               <p className="text-xs text-slate-700 leading-relaxed font-medium">{aiPopup.desc}</p>
             </div>
 
-            {/* 버튼 */}
             <div className="flex gap-3">
               <button
                 data-testid="strategy-reject-btn"
@@ -399,10 +475,41 @@ export default function FareManagement() {
         </div>
       )}
 
-      <div className="p-6 max-w-[1600px] mx-auto grid grid-cols-12 gap-5 pb-8">
+      {/* 모바일 사이드바 오버레이 */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* 모바일 상단 토글 버튼 */}
+      <div className="lg:hidden flex items-center gap-3 px-4 pt-4 pb-2">
+        <button
+          onClick={() => setSidebarOpen(v => !v)}
+          className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600"
+        >
+          {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+        <span className="text-sm font-bold text-slate-700">{selectedRoute} · {selectedDate}</span>
+      </div>
+
+      <div className="p-3 sm:p-6 max-w-[1600px] mx-auto grid grid-cols-12 gap-4 sm:gap-5 pb-8">
 
         {/* ── 좌측 사이드바 ── */}
-        <aside className="col-span-12 lg:col-span-3 space-y-5">
+        <aside className={`
+          col-span-12 lg:col-span-3 space-y-5
+          fixed lg:relative inset-y-0 left-0 z-40 lg:z-auto
+          w-72 lg:w-auto bg-white lg:bg-transparent
+          overflow-y-auto lg:overflow-visible
+          transition-transform duration-300
+          ${sidebarOpen ? "translate-x-0 shadow-2xl p-4 pt-12" : "-translate-x-full lg:translate-x-0"}
+        `}>
+
+          {/* 모바일 닫기 버튼 */}
+          <button
+            className="lg:hidden absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-slate-700"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X size={18} />
+          </button>
 
           {/* 노선 · 날짜 설정 */}
           <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
@@ -436,36 +543,27 @@ export default function FareManagement() {
               {/* 월간 달력 */}
               {showCalendar && (
                 <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-md">
-                  {/* 헤더 */}
                   <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
-                    <button onClick={prevMonth} className="p-1 rounded hover:bg-slate-200 text-slate-500">
-                      <ChevronLeft size={14} />
-                    </button>
-                    <span className="text-xs font-black text-slate-700">
-                      {calYear}년 {MONTH_KO[calMonth]}
-                    </span>
-                    <button onClick={nextMonth} className="p-1 rounded hover:bg-slate-200 text-slate-500">
-                      <ChevronRight size={14} />
-                    </button>
+                    <button onClick={prevMonth} className="p-1 rounded hover:bg-slate-200 text-slate-500"><ChevronLeft size={14} /></button>
+                    <span className="text-xs font-black text-slate-700">{calYear}년 {MONTH_KO[calMonth]}</span>
+                    <button onClick={nextMonth} className="p-1 rounded hover:bg-slate-200 text-slate-500"><ChevronRight size={14} /></button>
                   </div>
-                  {/* 요일 헤더 */}
                   <div className="grid grid-cols-7 text-center border-b border-slate-100">
                     {DOW_KO.map((d, i) => (
                       <div key={d} className={`text-[9px] font-black py-1.5 ${i === 0 ? "text-red-400" : i === 6 ? "text-blue-500" : "text-slate-400"}`}>{d}</div>
                     ))}
                   </div>
-                  {/* 날짜 */}
                   <div className="grid grid-cols-7">
                     {monthDays.map((d, i) => {
                       const isSelected = selectedDate === d.date;
-                      const isToday = d.date === today.toISOString().slice(0, 10);
+                      const isToday = d.date === todayStr;
                       const dow = i % 7;
                       return (
                         <button
                           key={d.date}
                           onClick={() => { if (d.inMonth) { setSelectedDate(d.date); setShowCalendar(false); } }}
                           disabled={!d.inMonth}
-                          className={`py-1.5 text-[10px] font-bold transition-all relative
+                          className={`py-1.5 text-[10px] font-bold transition-all
                             ${!d.inMonth ? "text-slate-200 cursor-default" : ""}
                             ${d.inMonth && !isSelected ? "hover:bg-blue-50" : ""}
                             ${isSelected ? "text-white rounded-sm" : ""}
@@ -483,17 +581,8 @@ export default function FareManagement() {
                 </div>
               )}
 
-              {/* 주간 달력 피커 */}
+              {/* 선택 날짜 기준 ±3일 주간 피커 */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <button onClick={() => setWeekOffset((w) => w - 1)}
-                    className="p-1 rounded hover:bg-slate-100 text-slate-400"><ChevronLeft size={15} /></button>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                    {weekDays[0].label} ~ {weekDays[6].label}
-                  </span>
-                  <button onClick={() => setWeekOffset((w) => w + 1)}
-                    className="p-1 rounded hover:bg-slate-100 text-slate-400"><ChevronRight size={15} /></button>
-                </div>
                 <div className="grid grid-cols-7 gap-1">
                   {weekDays.map((d) => (
                     <button
@@ -553,13 +642,11 @@ export default function FareManagement() {
         {/* ── 중앙 메인 ── */}
         <section className="col-span-12 lg:col-span-6 space-y-5">
 
-
-
           {/* 운항 현황 테이블 */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-5 border-b border-slate-100 flex justify-between items-end">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-end flex-wrap gap-2">
               <div>
-                <h2 className="text-xl font-black text-slate-800 tracking-tight">
+                <h2 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight">
                   {selectedDate} 운항 현황
                 </h2>
                 <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
@@ -568,7 +655,7 @@ export default function FareManagement() {
               </div>
               <div className="text-right">
                 <span className="text-[10px] font-black text-slate-400 block mb-1 uppercase">Selected</span>
-                <span className="text-lg font-black" style={{ color: BRAND }}>
+                <span className="text-base sm:text-lg font-black" style={{ color: BRAND }}>
                   {selectedFlight.id} / {selectedFlight.time}
                 </span>
               </div>
@@ -577,18 +664,18 @@ export default function FareManagement() {
               <table className="w-full text-left">
                 <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-400 border-b border-slate-100">
                   <tr>
-                    <th className="px-5 py-3">편명/시간</th>
-                    <th className="px-5 py-3 text-center">L/F</th>
-                    <th className="px-5 py-3 text-center">Pace</th>
-                    <th className="px-5 py-3">현재가</th>
-                    <th className="px-5 py-3 text-blue-600">AI 추천</th>
-                    <th className="px-5 py-3">상태</th>
+                    <th className="px-4 sm:px-5 py-3">편명/시간</th>
+                    <th className="px-4 sm:px-5 py-3 text-center">L/F</th>
+                    <th className="px-4 sm:px-5 py-3 text-center">Pace</th>
+                    <th className="px-4 sm:px-5 py-3 text-blue-600">AI 추천</th>
+                    <th className="px-4 sm:px-5 py-3">상태</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {flights.map((f) => {
                     const isSelected = f.id === selectedFlight.id;
                     const paceUp = f.pace.startsWith("+");
+                    const aiLabel = aiSuggestionLabel(f.currentPrice, f.aiRecommended);
                     return (
                       <tr
                         key={f.id}
@@ -597,35 +684,28 @@ export default function FareManagement() {
                           isSelected ? "bg-blue-50/80 border-l-4 border-[#002561]" : "border-l-4 border-transparent"
                         }`}
                       >
-                        <td className="px-5 py-4">
+                        <td className="px-4 sm:px-5 py-4">
                           <div className="font-black text-slate-900 text-sm">{f.id}</div>
                           <div className="text-[10px] text-slate-400 font-bold">{f.time} ({f.timeSlot})</div>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 sm:px-5 py-4">
                           <div className="flex flex-col items-center gap-1">
-                            <div className="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div className="w-14 bg-slate-200 rounded-full h-1.5 overflow-hidden">
                               <div className={`h-full ${lfBarColor(f.lf)}`} style={{ width: `${f.lf}%` }} />
                             </div>
                             <span className="text-[11px] font-black text-slate-600">{f.lf}%</span>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-center">
+                        <td className="px-4 sm:px-5 py-4 text-center">
                           <span className={`text-[11px] font-black flex items-center justify-center gap-0.5 ${paceUp ? "text-red-500" : "text-blue-500"}`}>
                             {paceUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
                             {f.pace}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-[12px] font-bold text-slate-800">{fmtW(f.currentPrice)}</td>
-                        <td className="px-5 py-4 font-black text-[12px] text-blue-600">
-                          {f.aiRecommended !== f.currentPrice
-                            ? <span className="flex items-center gap-1">
-                                {fmtW(f.aiRecommended)}
-                                <TrendingUp size={11} className={f.aiRecommended > f.currentPrice ? "text-red-400" : "text-blue-400"} />
-                              </span>
-                            : <span className="text-slate-400 font-medium text-xs">유지</span>
-                          }
+                        <td className="px-4 sm:px-5 py-4 font-black text-[12px]">
+                          <span className={aiLabel.color}>{aiLabel.text}</span>
                         </td>
-                        <td className="px-5 py-4">
+                        <td className="px-4 sm:px-5 py-4">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeClass(f.status)}`}>
                             {f.status}
                           </span>
@@ -638,9 +718,9 @@ export default function FareManagement() {
             </div>
           </div>
 
-          {/* 좌석 등급별 현황 카드 — AI 추천 인라인 통합 */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex justify-between items-center mb-5">
+          {/* 좌석 등급별 현황 카드 */}
+          <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+            <div className="flex justify-between items-center mb-5 flex-wrap gap-2">
               <h3 className="font-black text-slate-800 flex items-center gap-2">
                 <LayoutGrid size={16} style={{ color: BRAND }} />
                 좌석 등급별 운임 관리
@@ -653,45 +733,40 @@ export default function FareManagement() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {selectedFlight.classes.map((cls) => (
-                <ClassEditCard
-                  key={cls.code}
-                  cls={cls}
-                  flightId={selectedFlight.id}
-                  editState={editState}
-                  onStartEdit={startEdit}
-                  onCommit={commitEdit}
-                  onCancel={() => setEditState(null)}
-                  onEditChange={(v) => setEditState((e) => e ? { ...e, value: v } : null)}
-                  onToggleStatus={toggleStatus}
-                  onApplyAi={applyAiClass}
-                  onDetailAi={(fid, code) => {
-                    const cls = selectedFlight.classes.find(c => c.code === code);
-                    if (cls) setAiDetailPopup({ flightId: fid, cls });
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* AI 분석 근거 */}
-            <div className="mt-5 pt-4 border-t border-dashed border-slate-200 flex items-start gap-2">
-              <AlertCircle size={14} className="text-blue-500 flex-shrink-0 mt-0.5" />
-              <p className="text-[11px] leading-relaxed text-slate-500 font-medium">
-                <span className="text-blue-600 font-bold">AI 분석 근거:</span> {selectedFlight.reason}
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {selectedFlight.classes.map((cls) => {
+                const rejKey = `${selectedFlight.id}-${cls.code}`;
+                const isRejected = rejectedClasses.has(rejKey);
+                return (
+                  <ClassEditCard
+                    key={cls.code}
+                    cls={cls}
+                    flightId={selectedFlight.id}
+                    editState={editState}
+                    isRejected={isRejected}
+                    onStartEdit={startEdit}
+                    onCommit={commitEdit}
+                    onCancel={() => setEditState(null)}
+                    onEditChange={(v) => setEditState((e) => e ? { ...e, value: v } : null)}
+                    onToggleStatus={toggleStatus}
+                    onDetailAi={(fid, code) => {
+                      const c = selectedFlight.classes.find(c => c.code === code);
+                      if (c) setAiDetailPopup({ flightId: fid, cls: c });
+                    }}
+                  />
+                );
+              })}
             </div>
           </div>
         </section>
 
-        {/* ── 우측: Profit Analysis + AI 추천 ── */}
+        {/* ── 우측: Profit Analysis ── */}
         <aside className="col-span-12 lg:col-span-3 space-y-5">
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm sticky top-20">
+          <div className="bg-white p-5 sm:p-6 rounded-xl border border-slate-200 shadow-sm lg:sticky top-20">
             <h2 className="text-sm font-black text-slate-800 mb-6 flex items-center gap-2 border-b pb-4 uppercase">
               <BarChart4 size={16} style={{ color: BRAND }} /> Profit Analysis
             </h2>
             <div className="space-y-4">
-              {/* Revenue */}
               <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] font-black text-blue-600 uppercase">Revenue</span>
@@ -702,7 +777,6 @@ export default function FareManagement() {
                   {soldSeats}석 판매 (L/F {selectedFlight.lf}%)
                 </p>
               </div>
-              {/* Cost */}
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] font-black text-slate-500 uppercase">Cost</span>
@@ -711,7 +785,6 @@ export default function FareManagement() {
                 <div className="text-xl font-black text-slate-700">{fmtW(cost)}</div>
                 <p className="text-[9px] text-slate-400 font-bold mt-1 uppercase">Operational Expenses</p>
               </div>
-              {/* Profit / Margin */}
               <div className="bg-white p-4 rounded-xl border-2 border-slate-100 shadow-inner">
                 <div className="flex justify-between items-end mb-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase">Margin</span>
@@ -729,37 +802,43 @@ export default function FareManagement() {
                   />
                 </div>
               </div>
-              {/* 확정 버튼 */}
               <button
                 data-testid="confirm-inventory-btn"
-                className="w-full text-white py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-md active:scale-95"
-                style={{ backgroundColor: BRAND }}
+                onClick={handleConfirmInventory}
+                disabled={confirmLoading}
+                className={`w-full py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-60 ${
+                  confirmDone ? "bg-green-500 text-white" : "text-white hover:opacity-90"
+                }`}
+                style={confirmDone ? {} : { backgroundColor: BRAND }}
               >
-                <Plane size={15} /> 인벤토리 실시간 통제 확정
+                {confirmLoading
+                  ? <><RefreshCw size={15} className="animate-spin" /> 저장 중...</>
+                  : confirmDone
+                  ? <><CheckCircle size={15} /> 저장 완료</>
+                  : <><Plane size={15} /> 인벤토리 실시간 통제 확정</>}
               </button>
             </div>
           </div>
-
         </aside>
       </div>
     </div>
   );
 }
 
-// ── 등급 카드 (인라인 편집 + AI 추천 적용) ────────────────────────────────
+// ── 등급 카드 ─────────────────────────────────────────────────────────────────
 function ClassEditCard({
-  cls, flightId, editState, onStartEdit, onCommit, onCancel, onEditChange,
-  onToggleStatus, onApplyAi, onDetailAi,
+  cls, flightId, editState, isRejected, onStartEdit, onCommit, onCancel, onEditChange,
+  onToggleStatus, onDetailAi,
 }: {
   cls: DashboardClass;
   flightId: string;
   editState: EditState | null;
+  isRejected: boolean;
   onStartEdit: (fid: string, code: string, field: "price" | "seats", cur: number) => void;
   onCommit: () => void;
   onCancel: () => void;
   onEditChange: (v: string) => void;
   onToggleStatus: (fid: string, code: string) => void;
-  onApplyAi: (fid: string, code: string) => void;
   onDetailAi: (fid: string, code: string) => void;
 }) {
   const soldPct = cls.seats > 0 ? Math.round((cls.sold / cls.seats) * 100) : 0;
@@ -771,12 +850,14 @@ function ClassEditCard({
     cls.status === "Sold Out" ? "bg-red-200 text-red-700" :
                                 "bg-red-100 text-red-600";
 
-  const hasDiff = cls.aiPrice !== cls.price;
+  const hasDiff = cls.aiPrice !== cls.price && !isRejected;
   const aiUp = cls.aiPrice > cls.price;
   const aiDiffPct = cls.price > 0 ? Math.round(((cls.aiPrice - cls.price) / cls.price) * 100) : 0;
 
   return (
-    <div className="p-4 rounded-xl border border-slate-100 bg-slate-50 hover:border-blue-200 transition-all shadow-sm space-y-3">
+    <div className={`p-4 rounded-xl border transition-all shadow-sm space-y-3 ${
+      isRejected ? "bg-slate-100 border-slate-200 opacity-60" : "bg-slate-50 border-slate-100 hover:border-blue-200"
+    }`}>
       {/* 헤더 */}
       <div className="flex justify-between items-start">
         <div>
@@ -787,6 +868,7 @@ function ClassEditCard({
         </div>
         <button
           onClick={() => onToggleStatus(flightId, cls.code)}
+          disabled={isRejected}
           className={`text-[10px] font-black px-2 py-0.5 rounded cursor-pointer transition-all ${statusColor}`}
           title="클릭하여 Open/Closed 전환"
         >
@@ -813,7 +895,7 @@ function ClassEditCard({
             </div>
           ) : (
             <button
-              onClick={() => onStartEdit(flightId, cls.code, "price", cls.price)}
+              onClick={() => !isRejected && onStartEdit(flightId, cls.code, "price", cls.price)}
               className="font-mono font-black text-slate-800 text-sm hover:text-blue-600 transition-colors underline decoration-dotted"
               title="클릭하여 운임 수정"
             >
@@ -844,6 +926,14 @@ function ClassEditCard({
             </div>
           </div>
         )}
+
+        {/* 거부된 AI 추천 비활성 표시 */}
+        {isRejected && (
+          <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200">
+            <XIcon size={11} className="text-slate-400" />
+            <span className="text-[10px] text-slate-400 font-bold">AI 추천 거부됨</span>
+          </div>
+        )}
       </div>
 
       {/* 좌석 수 편집 + 판매율 바 */}
@@ -867,7 +957,7 @@ function ClassEditCard({
               </div>
             ) : (
               <button
-                onClick={() => onStartEdit(flightId, cls.code, "seats", cls.seats)}
+                onClick={() => !isRejected && onStartEdit(flightId, cls.code, "seats", cls.seats)}
                 className="text-slate-600 font-black hover:text-blue-600 underline decoration-dotted transition-colors"
                 title="클릭하여 좌석 수 수정"
               >

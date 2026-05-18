@@ -73,28 +73,24 @@ export default function Simulator() {
           </div>
         </div>
 
-        {/* Variable 2: Competitor */}
+        {/* Variable 2: Exchange Rate */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-          <div className="text-sm font-semibold text-gray-600 mb-3">신규 경쟁사 진입</div>
-          <div className="flex gap-3 mt-4">
-            <button
-              data-testid="competitor-none-btn"
-              onClick={() => setParams({ newCompetitorEntry: false })}
-              className={`flex-1 py-3 rounded-lg text-sm font-semibold border transition-all ${
-                !params.newCompetitorEntry ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-500 border-gray-200"
-              }`}
-            >없음</button>
-            <button
-              data-testid="competitor-entry-btn"
-              onClick={() => setParams({ newCompetitorEntry: true })}
-              className={`flex-1 py-3 rounded-lg text-sm font-semibold border transition-all ${
-                params.newCompetitorEntry ? "bg-red-500 text-white border-red-500" : "bg-white text-gray-500 border-gray-200"
-              }`}
-            >진입</button>
+          <div className="text-sm font-semibold text-gray-600 mb-3">환율 변동 (%)</div>
+          <input
+            data-testid="exchange-rate-slider"
+            type="range" min={-20} max={30} step={5}
+            value={params.exchangeRatePercent}
+            onChange={(e) => setParams({ exchangeRatePercent: Number(e.target.value) })}
+            className="w-full accent-violet-600"
+          />
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <span>-20%</span>
+            <span className={`font-bold text-base ${params.exchangeRatePercent > 0 ? "text-red-600" : params.exchangeRatePercent < 0 ? "text-blue-600" : "text-gray-500"}`}>
+              {params.exchangeRatePercent > 0 ? `+${params.exchangeRatePercent}%` : `${params.exchangeRatePercent}%`}
+            </span>
+            <span>+30%</span>
           </div>
-          {params.newCompetitorEntry && (
-            <p className="text-xs text-red-500 mt-2">3개월차부터 수요 약 8%p 감소 예상</p>
-          )}
+          <p className="text-xs text-gray-400 mt-2">환율 상승 시 해외여행 수요 일부 국내 전환, 항공기재 비용 증가 반영</p>
         </div>
 
         {/* Variable 3: Price */}

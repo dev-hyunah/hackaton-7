@@ -6,11 +6,12 @@ const BASE_REVENUE = 54_000_000;
 const BASE_LF = 72;
 const BASE_DEMAND = 520;
 
-function calcImpact(oilDelta: number, compEntry: boolean, priceDelta: number) {
+function calcImpact(oilDelta: number, exchangeDelta: number, priceDelta: number) {
   const oilEffect = -(oilDelta * 0.15);
-  const compEffect = compEntry ? -8 : 0;
+  // 환율 상승 → 해외여행 수요 국내로 일부 전환 (+) / 항공기재 비용 증가 (-)
+  const exchangeEffect = exchangeDelta > 0 ? exchangeDelta * 0.05 - exchangeDelta * 0.08 : exchangeDelta * 0.03;
   const priceEffect = priceDelta > 0 ? -(priceDelta * 0.6) : -(priceDelta * 0.4);
-  const lfDelta = oilEffect + compEffect + priceEffect;
+  const lfDelta = oilEffect + exchangeEffect + priceEffect;
   const newLf = Math.min(100, Math.max(10, BASE_LF + lfDelta));
   const demandMul = newLf / BASE_LF;
   const priceMul = 1 + priceDelta / 100;
@@ -33,7 +34,7 @@ const defaultParams: SimulationParamsDTO = {
   route: KE_DOMESTIC_ROUTES[0],
   date: new Date().toISOString().slice(0, 10),
   fuelChangePercent: 0,
-  newCompetitorEntry: false,
+  exchangeRatePercent: 0,
   priceChangePercent: 0,
 };
 
@@ -50,14 +51,15 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     set({ isRunning: true });
     await new Promise((r) => setTimeout(r, 800));
     const { params } = get();
-    const { fuelChangePercent, newCompetitorEntry, priceChangePercent } = params;
-    const impact = calcImpact(fuelChangePercent, newCompetitorEntry, priceChangePercent);
+    const { fuelChangePercent, exchangeRatePercent, priceChangePercent } = params;
+    const impact = calcImpact(fuelChangePercent, exchangeRatePercent, priceChangePercent);
     const chartData = Array.from({ length: 8 }, (_, i) => {
       const prog = (i + 1) / 8;
-      const effectiveOil = fuelChangePercent * prog;
-      const effectiveComp = newCompetitorEntry && i >= 2;
-      const effectivePrice = priceChangePercent * prog;
-      const { newRevenue, newLf } = calcImpact(effectiveOil, effectiveComp, effectivePrice);
+      const { newRevenue, newLf } = calcImpact(
+        fuelChangePercent * prog,
+        exchangeRatePercent * prog,
+        priceChangePercent * prog,
+      );
       const baseline = Math.round(BASE_REVENUE * (0.85 + Math.random() * 0.3));
       return { month: `${i + 1}월`, baseline, simulation: newRevenue, lf: newLf };
     });
