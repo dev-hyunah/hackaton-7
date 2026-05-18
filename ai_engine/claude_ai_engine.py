@@ -23,36 +23,41 @@ class ClaudeAiEngine(AbstractAiEngine):
 
     def analyze_strategy(self, issue_text: str, context: dict) -> dict:
         if not self._client:
+            print("[ClaudeAiEngine] ANTHROPIC_API_KEY not set — using MockAiEngine fallback")
             return self._mock.analyze_strategy(issue_text, context)
 
-        route = context.get("route", "")
-        flight_id = context.get("flight_id", "")
+        route = context.get("route_id", "")
+        flight_number = context.get("flight_number", "")
+        load_factor = context.get("load_factor", 70)
 
         prompt = (
             f"당신은 항공사 Revenue Management 전문가입니다.\n"
-            f"노선: {route}, 항공편: {flight_id}\n"
+            f"노선: {route}, 항공편: {flight_number}, 현재 탑승률(L/F): {load_factor}%\n"
             f"담당자 보고 이슈: \"{issue_text}\"\n\n"
             "위 이슈가 해당 노선/항공편의 수요와 운임에 미치는 영향을 분석하고, "
             "다음 JSON 형식으로만 응답하세요 (다른 텍스트 없이):\n"
             "{\n"
-            '  "description": "분석 결과 및 운임 전략 권고 (2~3문장)",\n'
+            '  "description": "분석 결과 및 운임 전략 권고 (2~3문장, 한국어)",\n'
             '  "price_factor": 1.10\n'
             "}\n"
             "price_factor는 현재 운임 대비 권고 배율입니다 (예: 1.10 = 10% 인상, 0.90 = 10% 인하)."
         )
 
         try:
+            print(f"[ClaudeAiEngine] Calling Claude API — flight: {flight_number}, route: {route}, lf: {load_factor}%")
             message = self._client.messages.create(
                 model="claude-sonnet-4-6",
                 max_tokens=512,
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = message.content[0].text.strip()
+            print(f"[ClaudeAiEngine] Raw response: {raw}")
             import json
             data = json.loads(raw)
             return {
                 "description": data.get("description", raw),
                 "price_factor": float(data.get("price_factor", 1.0)),
             }
-        except Exception:
+        except Exception as e:
+            print(f"[ClaudeAiEngine] ERROR — {type(e).__name__}: {e} — falling back to MockAiEngine")
             return self._mock.analyze_strategy(issue_text, context)
