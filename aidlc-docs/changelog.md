@@ -114,3 +114,99 @@
   - 좌석 등급 명칭/수 확정, NFR-06 반응형 추가, FR-05/06/08 v3 반영, 기술 스택 업데이트
 
 ---
+
+## 2026-05-18 (requirements_delta_jin.md 구현)
+
+### 전체 — 여백·반응형 개선
+- `frontend/src/components/FareManagement.tsx`
+  - 운임관리 페이지 `-m-8` 제거, `p-4 sm:p-6 lg:p-8` 적용으로 여백 개선
+  - 모바일 내부 햄버거 버튼(sidebarOpen/setSidebarOpen) 및 슬라이드 사이드바 완전 제거
+  - 달력+AI 전략 분석 영역을 `col-span-12 lg:col-span-3` 인라인 aside로 항상 노출
+
+### 운임관리 — 주간 피커 슬라이드 애니메이션
+- `frontend/src/components/FareManagement.tsx`
+  - `weekAnim` state + `changeDate(date, direction)` 함수 추가
+  - CSS @keyframes slideInLeft/slideInRight (0.32s cubic-bezier) 인라인 주입
+  - 날짜 클릭 방향(좌/우)에 따라 slide-left / slide-right 클래스 적용
+
+### 운임관리 — Sold Out 완전 잠금
+- `frontend/src/components/FareManagement.tsx` > `ClassEditCard`
+  - `isSoldOut` 판별 → 운임 편집 버튼, 좌석 편집 버튼, 상태 토글 버튼 모두 disabled
+  - Sold Out 카드: 회색 배경(`bg-slate-100 opacity-60`), 커서 not-allowed
+  - AI 추천 상세 보기도 `!isSoldOut` 조건으로 숨김
+
+### 운임관리 — AI 거부 음영 제거 (수동 편집 허용)
+- `frontend/src/components/FareManagement.tsx` > `ClassEditCard`
+  - 기존: `isRejected` 시 `opacity-60` 음영 + 모든 편집 비활성
+  - 변경: 음영 제거, `editLocked`은 Sold Out/Closed 기준으로만 판단
+  - 거부 배지 문구: "AI 추천 거부됨 — 수동 편집 가능"으로 변경
+
+### 운임관리 — Closed 로직 세분화
+- `frontend/src/components/FareManagement.tsx`
+  - `toggleStatus()`: Sold Out 방어(early return), 일반석 Closed 시 `seats = sold` 처리
+  - `redistributeClosedSeatsAI()`: 마지막 Open 등급 → L/F가 가장 낮은 Open 일반석 등급으로 이관
+  - `ClassEditCard`: `editLocked = isSoldOut || isClosed` 기준 통일
+  - Closed 안내 메시지: 프레스티지 vs 일반석 문구 구분
+
+### 요구사항 문서 업데이트
+- `requirements_delta_jin.md` 내용을 `requirements_delta_v3.md`에 병합
+- `requirements.md` 버전 이력·FR-02·NFR-06 업데이트
+
+---
+
+## 2026-05-18 (requirements_delta_jin.md v2 구현)
+
+### 운임관리 — Open/Closed/Sold Out 좌석 로직 전면 개편
+- `frontend/src/components/FareManagement.tsx`
+  - `redistributeClosedSeatsAI()` 함수 제거 — Closed 전환 시 자동 좌석 이관 로직 삭제
+  - `toggleStatus()` 단순화: 상태만 전환 (seats 자동 변경 없음), Sold Out 토글 방어만 유지
+  - `aiReallocateSeats()` 신규 함수 추가:
+    - 총 좌석 불변 원칙 적용
+    - 증가 시: 기회비용 최소(price×spare 최소) 일반석 등급에서 차감
+    - 감소 시: 수익 기여 최대(price×spare 최대) 일반석 등급으로 이관
+    - sold≥seats 조건 도달 시 Sold Out 자동 전환
+    - 차감/이관 불가 시 error 메시지 반환
+  - `commitEdit()` 좌석 수 처리 개편: 프레스티지 방어 → `aiReallocateSeats()` 호출 → error 시 alert 배너
+  - `seatAlert` state 추가: 4초 자동 소멸 배너
+  - `ClassEditCard`: `editLocked` 제거, `priceLocked=false` / `seatsLocked=isPrestige`로 분리
+    - Sold Out도 운임·좌석 수 편집 허용
+    - Closed 카드 배경 orange, Sold Out 카드 배경 red-50
+
+### 요구사항 문서 업데이트
+- `requirements_delta_v3.md` — jin v2 내용 병합
+- `requirements.md` — FR-02 좌석 로직 최신화, 버전 이력 추가
+
+---
+
+## 2026-05-18 (Closed 운임 잠금)
+
+### 운임관리 — Closed 상태 운임 수정 잠금
+- `frontend/src/components/FareManagement.tsx` > `ClassEditCard`
+  - `priceLocked = isClosed` 로 변경 (기존 `false`)
+  - Closed 등급의 운임 버튼: disabled + 회색 처리 + "Closed 상태 — 운임 수정 불가" 툴팁
+
+### 요구사항 문서 업데이트
+- `requirements_delta_v3.md` — Closed 운임 잠금 내용 추가
+- `requirements.md` — 동일 반영
+
+---
+
+## 2026-05-18 (Sold Out 좌석 증가 시 Open 복구 버그 수정)
+
+### 운임관리 — Sold Out → Open 자동 복구 누락 수정
+- `frontend/src/components/FareManagement.tsx` > `aiReallocateSeats()`
+  - 버그: 좌석 증가(delta > 0) 시 변경 대상 등급의 seats > sold 조건에서 Sold Out → Open 복구 로직 누락
+  - 수정: `updated[tidx].seats > updated[tidx].sold && status === "Sold Out"` 조건에서 Open으로 전환
+
+---
+
+## 2026-05-18 — requirements_delta_jin.md 검증 및 제거
+
+### [Requirements] requirements_delta_jin.md 내용 검증 및 통합 완료
+- `requirements_delta_v3.md` 검증: jin v1·v2·v2보완 내용 모두 반영 확인 (완전)
+- `requirements.md` 검증: FR-01·FR-02·NFR-06 반영 확인. Section 11 버전이력에 누락된 2개 행 추가:
+  - `jin v2 보완` — Closed 상태 운임 수정 잠금
+  - `버그수정` — Sold Out → Open 자동 복구 누락 수정
+- `requirements_delta_jin.md` 삭제 완료 (내용 전량 requirements_delta_v3.md에 보존)
+
+---

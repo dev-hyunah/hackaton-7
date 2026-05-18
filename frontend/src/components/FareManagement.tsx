@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Search, Sparkles, Send, LayoutGrid, BarChart4,
   Coins, Wallet, XCircle,
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  RefreshCw, Plane, CheckCircle, XIcon, Calendar, Menu, X,
+  RefreshCw, Plane, CheckCircle, XIcon, Calendar,
 } from "lucide-react";
 import {
   buildDashboardFlights, KE_DOMESTIC_ROUTES,
@@ -51,7 +51,6 @@ interface EditState {
   value: string;
 }
 
-// 선택 날짜 기준 -3d ~ +3d 7일 생성
 function buildWeekAroundDate(centerDate: string): { date: string; dayOfWeek: string; isToday: boolean; isPeak: boolean }[] {
   const dow = ["일", "월", "화", "수", "목", "금", "토"];
   const peakMonths = [1, 7, 8, 12];
@@ -69,7 +68,6 @@ function buildWeekAroundDate(centerDate: string): { date: string; dayOfWeek: str
   });
 }
 
-// 월간 달력 날짜 생성
 function buildMonthDays(year: number, month: number): { date: string; day: number; inMonth: boolean }[] {
   const firstDay = new Date(year, month, 1).getDay();
   const lastDate = new Date(year, month + 1, 0).getDate();
@@ -92,18 +90,98 @@ function buildMonthDays(year: number, month: number): { date: string; day: numbe
 const MONTH_KO = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 const DOW_KO = ["일","월","화","수","목","금","토"];
 
-// AI 추천 문구 생성
 function aiSuggestionLabel(current: number, ai: number): { text: string; color: string } {
   if (ai > current * 1.02) return { text: "가격을 올리세요", color: "text-red-600" };
   if (ai < current * 0.98) return { text: "가격을 내리세요", color: "text-blue-600" };
   return { text: "유지", color: "text-slate-400" };
 }
 
+// 일반석 좌석 수 변경 시 AI 재배분 — 총 좌석 수 불변 원칙
+// delta > 0 (증가): 다른 일반석 중 수익 기여가 낮은 쪽(가격×잔여석 최소)에서 차감
+// delta < 0 (감소): 다른 일반석 중 수익 기여가 높은 쪽(가격×잔여석 최대)으로 이관
+// 반환: { classes: DashboardClass[], error?: string }
+function aiReallocateSeats(
+  classes: DashboardClass[],
+  targetCode: string,
+  newSeats: number,
+): { classes: DashboardClass[]; error?: string } {
+  const target = classes.find(c => c.code === targetCode)!;
+  const delta = newSeats - target.seats;
+  if (delta === 0) return { classes };
+
+  // 프레스티지 제외한 다른 일반석 후보
+  const others = classes
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => c.code !== targetCode && !c.name.includes("프레스티지"));
+
+  if (delta > 0) {
+    // 좌석 늘림 → 다른 등급에서 delta만큼 차감
+    // 이익극대화: 가격×잔여석(여유)이 가장 낮은 등급 우선 차감 (기회비용 최소)
+    const candidates = others
+      .map(({ c, i }) => ({ c, i, spare: c.seats - c.sold }))
+      .filter(({ spare }) => spare > 0)
+      .sort((a, b) => (a.c.price * a.spare) - (b.c.price * b.spare));
+
+    const totalSpare = candidates.reduce((s, x) => s + x.spare, 0);
+    if (totalSpare < delta) {
+      return { classes, error: `감소 가능한 좌석이 부족합니다. 최대 ${totalSpare}석까지 늘릴 수 있습니다.` };
+    }
+
+    const updated = classes.map(c => ({ ...c }));
+    updated[classes.findIndex(c => c.code === targetCode)].seats = newSeats;
+    let remaining = delta;
+    for (const { i, spare } of candidates) {
+      if (remaining <= 0) break;
+      const take = Math.min(spare, remaining);
+      updated[i].seats -= take;
+      if (updated[i].seats === updated[i].sold) updated[i] = { ...updated[i], status: "Sold Out" as const };
+      remaining -= take;
+    }
+    // 변경 대상: seats > sold이면 Sold Out → Open 복구, seats === sold이면 Sold Out
+    const tidx = updated.findIndex(c => c.code === targetCode);
+    if (updated[tidx].seats > updated[tidx].sold && updated[tidx].status === "Sold Out") {
+      updated[tidx] = { ...updated[tidx], status: "Open" as const };
+    } else if (updated[tidx].seats === updated[tidx].sold) {
+      updated[tidx] = { ...updated[tidx], status: "Sold Out" as const };
+    }
+    return { classes: updated };
+
+  } else {
+    // 좌석 줄임 → 다른 등급으로 |delta|만큼 이관
+    // 이익극대화: 가격×잔여석이 가장 높은 등급으로 이관 (수익 기여 최대)
+    const canDecrease = newSeats >= target.sold;
+    if (!canDecrease) {
+      return { classes, error: `판매된 좌석(${target.sold}석)보다 적게 줄일 수 없습니다.` };
+    }
+
+    const recipients = others
+      .map(({ c, i }) => ({ c, i }))
+      .filter(({ c }) => c.status !== "Sold Out")
+      .sort((a, b) => (b.c.price * (b.c.seats - b.c.sold)) - (a.c.price * (a.c.seats - a.c.sold)));
+
+    if (recipients.length === 0) {
+      return { classes, error: "좌석을 이관할 수 있는 등급이 없습니다." };
+    }
+
+    const updated = classes.map(c => ({ ...c }));
+    updated[classes.findIndex(c => c.code === targetCode)].seats = newSeats;
+    if (newSeats === target.sold) {
+      updated[classes.findIndex(c => c.code === targetCode)].status = "Sold Out";
+    }
+    // 가장 적합한 1개 등급에 전량 이관 (단순·명확)
+    updated[recipients[0].i].seats += Math.abs(delta);
+    if (updated[recipients[0].i].status === "Closed") {
+      updated[recipients[0].i].status = "Open";
+    }
+    return { classes: updated };
+  }
+}
+
 export default function FareManagement() {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
   const [calYear, setCalYear]           = useState(today.getFullYear());
-  const [calMonth, setCalMonth]         = useState(today.getMonth()); // 0-indexed
+  const [calMonth, setCalMonth]         = useState(today.getMonth());
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState(KE_DOMESTIC_ROUTES[0]);
@@ -119,15 +197,18 @@ export default function FareManagement() {
   const [aiPopup, setAiPopup]           = useState<{ desc: string; recommendedPrice?: number } | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [confirmDone, setConfirmDone]   = useState(false);
-  // AI 거부 추적: 거부된 classCode set
+  // 거부는 음영 없이 배지만 표시 — 편집은 여전히 허용
   const [rejectedClasses, setRejectedClasses] = useState<Set<string>>(new Set());
+  const [seatAlert, setSeatAlert] = useState<string | null>(null);
   const aiRef = useRef<HTMLTextAreaElement>(null);
   const { updateFare } = useFareStore();
   const { approveRecommendation, rejectRecommendation } = useAiRecommendationStore();
   const [aiDetailPopup, setAiDetailPopup] = useState<{ flightId: string; cls: DashboardClass } | null>(null);
-  const [sidebarOpen, setSidebarOpen]   = useState(false);
+  // 주간 피커: 실제로 화면에 표시할 날짜(애니메이션 중엔 이전 날짜 유지)
+  const [displayedDate, setDisplayedDate] = useState(todayStr);
+  const [weekPhase, setWeekPhase] = useState<"idle" | "exit-left" | "exit-right" | "enter-left" | "enter-right">("idle");
+  const weekAnimLock = useRef(false);
 
-  const weekDays = buildWeekAroundDate(selectedDate);
   const monthDays = buildMonthDays(calYear, calMonth);
 
   const prevMonth = () => {
@@ -138,6 +219,29 @@ export default function FareManagement() {
     if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
     else setCalMonth(m => m + 1);
   };
+
+  // exit → swap → enter 3단계 슬라이드 전환
+  const changeDate = useCallback((newDate: string, direction?: "left" | "right") => {
+    if (!direction || weekAnimLock.current) {
+      setSelectedDate(newDate);
+      setDisplayedDate(newDate);
+      return;
+    }
+    weekAnimLock.current = true;
+    // 1) exit: 현재 주 밀려나감
+    setWeekPhase(direction === "left" ? "exit-left" : "exit-right");
+    setTimeout(() => {
+      // 2) 날짜 교체 (보이지 않는 동안)
+      setSelectedDate(newDate);
+      setDisplayedDate(newDate);
+      setWeekPhase(direction === "left" ? "enter-right" : "enter-left");
+      // 3) enter 완료 후 idle
+      setTimeout(() => {
+        setWeekPhase("idle");
+        weekAnimLock.current = false;
+      }, 280);
+    }, 200);
+  }, []);
 
   useEffect(() => {
     const newFlights = buildDashboardFlights(selectedRoute);
@@ -151,7 +255,6 @@ export default function FareManagement() {
     if (found) setSelectedFlight(found);
   };
 
-  // ── 인라인 편집 ──────────────────────────────────────────────────────────
   const startEdit = (flightId: string, classCode: string, field: "price" | "seats", cur: number) => {
     setEditState({ flightId, classCode, field, value: String(cur) });
   };
@@ -159,27 +262,51 @@ export default function FareManagement() {
     if (!editState) return;
     const num = parseInt(editState.value, 10);
     if (isNaN(num) || num < 0) { setEditState(null); return; }
-    const updated = flights.map((f) => {
-      if (f.id !== editState.flightId) return f;
-      return {
-        ...f,
-        classes: f.classes.map((c) => {
-          if (c.code !== editState.classCode) return c;
-          if (editState.field === "price") {
+
+    if (editState.field === "price") {
+      const updated = flights.map((f) => {
+        if (f.id !== editState.flightId) return f;
+        return {
+          ...f,
+          classes: f.classes.map((c) => {
+            if (c.code !== editState.classCode) return c;
             updateFare(editState.flightId, editState.classCode, num);
             return { ...c, price: num };
-          }
-          const newSeats = Math.max(num, 1);
-          return { ...c, seats: newSeats, sold: Math.min(c.sold, newSeats) };
-        }),
-      };
-    });
+          }),
+        };
+      });
+      setFlights(updated);
+      syncSelected(updated);
+      setEditState(null);
+      return;
+    }
+
+    // 좌석 수 변경 — 총 좌석 불변 원칙, AI 재배분
+    const flight = flights.find(f => f.id === editState.flightId);
+    if (!flight) { setEditState(null); return; }
+    const targetCls = flight.classes.find(c => c.code === editState.classCode);
+    if (!targetCls) { setEditState(null); return; }
+
+    // 프레스티지 좌석 수 변경 불가 (방어)
+    if (targetCls.name.includes("프레스티지")) { setEditState(null); return; }
+
+    const newSeats = Math.max(num, targetCls.sold); // sold 보다 작아질 수 없음
+    const { classes: newClasses, error } = aiReallocateSeats(flight.classes, editState.classCode, newSeats);
+    if (error) {
+      setSeatAlert(error);
+      setTimeout(() => setSeatAlert(null), 4000);
+      setEditState(null);
+      return;
+    }
+
+    const updated = flights.map((f) =>
+      f.id !== editState.flightId ? f : { ...f, classes: newClasses }
+    );
     setFlights(updated);
     syncSelected(updated);
     setEditState(null);
   };
 
-  // ── AI 전략 분석 요청 (실제 API 연동) ─────────────────────────────────────
   const runAi = async () => {
     if (!aiQuery.trim()) return;
     setAiLoading(true);
@@ -190,7 +317,6 @@ export default function FareManagement() {
       );
       setAiPopup({ desc: res.description, recommendedPrice: res.recommended_price });
     } catch {
-      // 백엔드 미연결 시 mock fallback
       const up = selectedFlight.aiRecommended > selectedFlight.currentPrice;
       setAiPopup({
         desc: `"${aiQuery}" 분석 결과 — 해당 이슈로 수요 변동 가능성이 감지되었습니다. ${up ? "하위 클래스 인벤토리 즉시 회수 및" : ""} ${selectedFlight.id} 운임을 ${fmtW(selectedFlight.aiRecommended)}으로 ${up ? "인상" : "조정"}하십시오.`,
@@ -200,7 +326,6 @@ export default function FareManagement() {
     }
   };
 
-  // ── AI 추천 일괄 적용 (팝업) ─────────────────────────────────────────────
   const applyAiPopup = () => {
     const updated = flights.map((f) =>
       f.id === selectedFlight.id
@@ -210,9 +335,7 @@ export default function FareManagement() {
             classes: f.classes.map((c) => ({
               ...c,
               price: c.aiPrice,
-              status: c.name.includes("특가")
-                ? ("Closed" as ClassStatus)
-                : c.status,
+              status: c.name.includes("특가") ? ("Closed" as ClassStatus) : c.status,
             })),
           }
         : f
@@ -223,7 +346,6 @@ export default function FareManagement() {
     setAiQuery("");
   };
 
-  // ── AI 추천가 단건 적용 ───────────────────────────────────────────────────
   const applyAiClass = (flightId: string, classCode: string) => {
     const updated = flights.map((f) => {
       if (f.id !== flightId) return f;
@@ -238,7 +360,7 @@ export default function FareManagement() {
     syncSelected(updated);
   };
 
-  // ── 클래스 상태 토글 ─────────────────────────────────────────────────────
+  // Open / Closed 전환 (좌석 이동 없음, Sold Out은 토글 불가)
   const toggleStatus = (flightId: string, classCode: string) => {
     const updated = flights.map((f) => {
       if (f.id !== flightId) return f;
@@ -246,53 +368,22 @@ export default function FareManagement() {
         ...f,
         classes: f.classes.map((c) => {
           if (c.code !== classCode) return c;
-          const next: ClassStatus =
-            c.status === "Open" ? "Closed" :
-            c.status === "Closed" ? "Open" : c.status;
+          if (c.status === "Sold Out") return c;
+          const next: ClassStatus = c.status === "Open" ? "Closed" : "Open";
           return { ...c, status: next };
         }),
       };
     });
-    // Closed → Open 전환 시 다른 Closed 클래스 잔여석 자동 이관
-    redistributeClosedSeats(updated, flightId);
+    setFlights(updated);
+    syncSelected(updated);
   };
 
-  // ── Closed 등급 잔여좌석 자동 이관 ──────────────────────────────────────
-  const redistributeClosedSeats = (updated: DashboardFlight[], flightId: string) => {
-    const result = updated.map((f) => {
-      if (f.id !== flightId) return f;
-      const classes = [...f.classes];
-      // Closed 등급의 잔여석 합산
-      let surplus = 0;
-      const newClasses = classes.map((c) => {
-        if (c.status === "Closed" && c.sold < c.seats) {
-          surplus += c.seats - c.sold;
-          return { ...c, seats: c.sold };
-        }
-        return c;
-      });
-      // Open 등급 중 마지막 등급(가장 낮은 클래스)에 이관
-      if (surplus > 0) {
-        const openIdx = newClasses.map((c, i) => ({ c, i })).filter(({ c }) => c.status === "Open");
-        if (openIdx.length > 0) {
-          const target = openIdx[openIdx.length - 1];
-          newClasses[target.i] = { ...newClasses[target.i], seats: newClasses[target.i].seats + surplus };
-        }
-      }
-      return { ...f, classes: newClasses };
-    });
-    setFlights(result);
-    syncSelected(result);
-  };
-
-  // ── AI 거부 처리 ──────────────────────────────────────────────────────────
   const handleRejectAi = (flightId: string, classCode: string) => {
     rejectRecommendation(`${flightId}-${classCode}`);
     setRejectedClasses(prev => new Set(prev).add(`${flightId}-${classCode}`));
     setAiDetailPopup(null);
   };
 
-  // ── 인벤토리 확정 (백엔드 저장) ──────────────────────────────────────────
   const handleConfirmInventory = async () => {
     setConfirmLoading(true);
     try {
@@ -306,7 +397,6 @@ export default function FareManagement() {
       setConfirmDone(true);
       setTimeout(() => setConfirmDone(false), 2500);
     } catch {
-      // 백엔드 미연결 시에도 UI 피드백
       setConfirmDone(true);
       setTimeout(() => setConfirmDone(false), 2500);
     } finally {
@@ -314,7 +404,6 @@ export default function FareManagement() {
     }
   };
 
-  // ── Profit 계산 ───────────────────────────────────────────────────────────
   const revenue = selectedFlight.classes.reduce((s, c) => s + c.sold * c.price, 0);
   const cost    = selectedFlight.baseCost;
   const profit  = revenue - cost;
@@ -322,7 +411,7 @@ export default function FareManagement() {
   const soldSeats = selectedFlight.classes.reduce((s, c) => s + c.sold, 0);
 
   return (
-    <div className="space-y-0 -m-8" data-testid="fare-management-page">
+    <div className="space-y-0" data-testid="fare-management-page">
 
       {/* AI 추천 상세 모달 */}
       {aiDetailPopup && (() => {
@@ -445,7 +534,6 @@ export default function FareManagement() {
                 <XCircle size={22} />
               </button>
             </div>
-
             <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 mb-5">
               <div className="flex items-center gap-1.5 mb-2">
                 <Sparkles size={12} className="text-sky-500" />
@@ -453,7 +541,6 @@ export default function FareManagement() {
               </div>
               <p className="text-xs text-slate-700 leading-relaxed font-medium">{aiPopup.desc}</p>
             </div>
-
             <div className="flex gap-3">
               <button
                 data-testid="strategy-reject-btn"
@@ -475,48 +562,36 @@ export default function FareManagement() {
         </div>
       )}
 
-      {/* 모바일 사이드바 오버레이 */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      {/* 좌석 수 변경 불가 알림 */}
+      {seatAlert && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-red-600 text-white text-sm font-bold px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce-once">
+          <XCircle size={16} /> {seatAlert}
+        </div>
       )}
 
-      {/* 모바일 상단 토글 버튼 */}
-      <div className="lg:hidden flex items-center gap-3 px-4 pt-4 pb-2">
-        <button
-          onClick={() => setSidebarOpen(v => !v)}
-          className="p-2 rounded-lg border border-slate-200 bg-white text-slate-600"
-        >
-          {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
-        </button>
-        <span className="text-sm font-bold text-slate-700">{selectedRoute} · {selectedDate}</span>
-      </div>
+      {/* 주간 피커 슬라이드 CSS */}
+      <style>{`
+        @keyframes weekExitLeft  { from{opacity:1;transform:translateX(0)}   to{opacity:0;transform:translateX(-40px)} }
+        @keyframes weekExitRight { from{opacity:1;transform:translateX(0)}   to{opacity:0;transform:translateX(40px)}  }
+        @keyframes weekEnterLeft { from{opacity:0;transform:translateX(40px)}  to{opacity:1;transform:translateX(0)}  }
+        @keyframes weekEnterRight{ from{opacity:0;transform:translateX(-40px)} to{opacity:1;transform:translateX(0)}  }
+        .week-exit-left  { animation: weekExitLeft  0.18s cubic-bezier(.4,0,1,1)   both; }
+        .week-exit-right { animation: weekExitRight 0.18s cubic-bezier(.4,0,1,1)   both; }
+        .week-enter-left { animation: weekEnterLeft  0.26s cubic-bezier(0,.5,.3,1) both; }
+        .week-enter-right{ animation: weekEnterRight 0.26s cubic-bezier(0,.5,.3,1) both; }
+      `}</style>
 
-      <div className="p-3 sm:p-6 max-w-[1600px] mx-auto grid grid-cols-12 gap-4 sm:gap-5 pb-8">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto grid grid-cols-12 gap-4 sm:gap-5 pb-8">
 
-        {/* ── 좌측 사이드바 ── */}
-        <aside className={`
-          col-span-12 lg:col-span-3 space-y-5
-          fixed lg:relative inset-y-0 left-0 z-40 lg:z-auto
-          w-72 lg:w-auto bg-white lg:bg-transparent
-          overflow-y-auto lg:overflow-visible
-          transition-transform duration-300
-          ${sidebarOpen ? "translate-x-0 shadow-2xl p-4 pt-12" : "-translate-x-full lg:translate-x-0"}
-        `}>
-
-          {/* 모바일 닫기 버튼 */}
-          <button
-            className="lg:hidden absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-slate-700"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X size={18} />
-          </button>
+        {/* ── 좌측 사이드바 — 항상 렌더, 모바일도 col-span-12 ── */}
+        <aside className="col-span-12 lg:col-span-3 space-y-4">
 
           {/* 노선 · 날짜 설정 */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
             <h2 className="text-xs font-black text-slate-400 mb-4 flex items-center gap-2 uppercase tracking-wider">
               <Search size={13} /> 노선 및 일자 설정
             </h2>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <select
                 data-testid="fare-route-select"
                 value={selectedRoute}
@@ -528,7 +603,7 @@ export default function FareManagement() {
                 ))}
               </select>
 
-              {/* 날짜 선택 버튼 (달력 토글) */}
+              {/* 날짜 선택 토글 */}
               <button
                 onClick={() => setShowCalendar((v) => !v)}
                 className="w-full flex items-center justify-between p-3 border border-slate-200 rounded-lg bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition-all"
@@ -537,7 +612,7 @@ export default function FareManagement() {
                   <Calendar size={14} className="text-blue-500" />
                   {selectedDate}
                 </span>
-                <ChevronRight size={14} className={`text-slate-400 transition-transform ${showCalendar ? "rotate-90" : ""}`} />
+                <ChevronRight size={14} className={`text-slate-400 transition-transform duration-200 ${showCalendar ? "rotate-90" : ""}`} />
               </button>
 
               {/* 월간 달력 */}
@@ -561,7 +636,7 @@ export default function FareManagement() {
                       return (
                         <button
                           key={d.date}
-                          onClick={() => { if (d.inMonth) { setSelectedDate(d.date); setShowCalendar(false); } }}
+                          onClick={() => { if (d.inMonth) { changeDate(d.date); setShowCalendar(false); } }}
                           disabled={!d.inMonth}
                           className={`py-1.5 text-[10px] font-bold transition-all
                             ${!d.inMonth ? "text-slate-200 cursor-default" : ""}
@@ -581,29 +656,44 @@ export default function FareManagement() {
                 </div>
               )}
 
-              {/* 선택 날짜 기준 ±3일 주간 피커 */}
-              <div>
-                <div className="grid grid-cols-7 gap-1">
-                  {weekDays.map((d) => (
-                    <button
-                      key={d.date}
-                      onClick={() => setSelectedDate(d.date)}
-                      className={`flex flex-col items-center py-2 rounded-lg text-[10px] font-black border transition-all ${
-                        selectedDate === d.date
-                          ? "text-white border-[#002561]"
-                          : d.isToday
-                          ? "bg-blue-50 border-blue-200 text-blue-700"
-                          : "bg-white border-slate-100 text-slate-500 hover:border-blue-300"
-                      }`}
-                      style={selectedDate === d.date ? { backgroundColor: BRAND } : {}}
-                    >
-                      <span className="text-[8px] opacity-70">{d.dayOfWeek}</span>
-                      <span>{d.date.slice(8)}</span>
-                      {d.isPeak && <span className="text-[7px] text-amber-500 font-bold">성수기</span>}
-                    </button>
-                  ))}
+              {/* 주간 피커 — exit/enter 슬라이드 전환 */}
+              <div className="overflow-hidden rounded-lg">
+                <div className={`grid grid-cols-7 gap-1 ${
+                  weekPhase === "exit-left"   ? "week-exit-left"   :
+                  weekPhase === "exit-right"  ? "week-exit-right"  :
+                  weekPhase === "enter-left"  ? "week-enter-left"  :
+                  weekPhase === "enter-right" ? "week-enter-right" : ""
+                }`}>
+                  {buildWeekAroundDate(displayedDate).map((d, idx) => {
+                    const isSelected = selectedDate === d.date;
+                    const isCenter = idx === 3;
+                    return (
+                      <button
+                        key={d.date}
+                        onClick={() => {
+                          const dir = idx < 3 ? "right" : idx > 3 ? "left" : undefined;
+                          changeDate(d.date, dir);
+                        }}
+                        className={`flex flex-col items-center py-2 rounded-lg text-[10px] font-black border transition-colors duration-150 ${
+                          isSelected
+                            ? "text-white border-[#002561]"
+                            : isCenter && !isSelected
+                            ? "bg-blue-50 border-blue-200 text-blue-700"
+                            : d.isToday
+                            ? "bg-blue-50 border-blue-200 text-blue-700"
+                            : "bg-white border-slate-100 text-slate-500 hover:border-blue-300"
+                        }`}
+                        style={isSelected ? { backgroundColor: BRAND } : {}}
+                      >
+                        <span className="text-[8px] opacity-70">{d.dayOfWeek}</span>
+                        <span>{d.date.slice(8)}</span>
+                        {d.isPeak && <span className="text-[7px] text-amber-500 font-bold">성수기</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
               <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 font-medium">
                 📅 {selectedDate} · {selectedRoute}
               </div>
@@ -611,8 +701,8 @@ export default function FareManagement() {
           </div>
 
           {/* AI 전략 분석 요청 */}
-          <div className="rounded-xl shadow-lg text-white p-5" style={{ backgroundColor: BRAND }}>
-            <h2 className="text-sm font-black mb-4 flex items-center gap-2">
+          <div className="rounded-xl shadow-lg text-white p-4 sm:p-5" style={{ backgroundColor: BRAND }}>
+            <h2 className="text-sm font-black mb-3 flex items-center gap-2">
               <Sparkles size={16} className="text-sky-300" /> AI 전략 분석 요청
             </h2>
             <div className="space-y-3">
@@ -621,14 +711,14 @@ export default function FareManagement() {
                 ref={aiRef}
                 value={aiQuery}
                 onChange={(e) => setAiQuery(e.target.value)}
-                className="w-full h-24 p-3 bg-white/10 border border-white/20 rounded-lg text-xs placeholder:text-white/40 focus:bg-white/20 focus:outline-none resize-none font-medium"
+                className="w-full h-20 p-3 bg-white/10 border border-white/20 rounded-lg text-xs placeholder:text-white/40 focus:bg-white/20 focus:outline-none resize-none font-medium"
                 placeholder="돌발 이슈를 입력하세요&#10;(예: 태풍 보도, 대형 행사, 연휴 등)"
               />
               <button
                 data-testid="ai-strategy-submit-btn"
                 onClick={runAi}
                 disabled={aiLoading || !aiQuery.trim()}
-                className="w-full bg-sky-400 hover:bg-sky-500 disabled:opacity-50 text-[#002561] font-black py-3 rounded-lg text-xs flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full bg-sky-400 hover:bg-sky-500 disabled:opacity-50 text-[#002561] font-black py-2.5 rounded-lg text-xs flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 {aiLoading
                   ? <><RefreshCw size={13} className="animate-spin" /> 분석 중...</>
@@ -640,13 +730,13 @@ export default function FareManagement() {
         </aside>
 
         {/* ── 중앙 메인 ── */}
-        <section className="col-span-12 lg:col-span-6 space-y-5">
+        <section className="col-span-12 lg:col-span-6 space-y-4">
 
           {/* 운항 현황 테이블 */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-end flex-wrap gap-2">
               <div>
-                <h2 className="text-lg sm:text-xl font-black text-slate-800 tracking-tight">
+                <h2 className="text-base sm:text-xl font-black text-slate-800 tracking-tight">
                   {selectedDate} 운항 현황
                 </h2>
                 <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
@@ -655,7 +745,7 @@ export default function FareManagement() {
               </div>
               <div className="text-right">
                 <span className="text-[10px] font-black text-slate-400 block mb-1 uppercase">Selected</span>
-                <span className="text-base sm:text-lg font-black" style={{ color: BRAND }}>
+                <span className="text-sm sm:text-lg font-black" style={{ color: BRAND }}>
                   {selectedFlight.id} / {selectedFlight.time}
                 </span>
               </div>
@@ -684,11 +774,11 @@ export default function FareManagement() {
                           isSelected ? "bg-blue-50/80 border-l-4 border-[#002561]" : "border-l-4 border-transparent"
                         }`}
                       >
-                        <td className="px-4 sm:px-5 py-4">
+                        <td className="px-4 sm:px-5 py-3 sm:py-4">
                           <div className="font-black text-slate-900 text-sm">{f.id}</div>
                           <div className="text-[10px] text-slate-400 font-bold">{f.time} ({f.timeSlot})</div>
                         </td>
-                        <td className="px-4 sm:px-5 py-4">
+                        <td className="px-4 sm:px-5 py-3 sm:py-4">
                           <div className="flex flex-col items-center gap-1">
                             <div className="w-14 bg-slate-200 rounded-full h-1.5 overflow-hidden">
                               <div className={`h-full ${lfBarColor(f.lf)}`} style={{ width: `${f.lf}%` }} />
@@ -696,16 +786,16 @@ export default function FareManagement() {
                             <span className="text-[11px] font-black text-slate-600">{f.lf}%</span>
                           </div>
                         </td>
-                        <td className="px-4 sm:px-5 py-4 text-center">
+                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-center">
                           <span className={`text-[11px] font-black flex items-center justify-center gap-0.5 ${paceUp ? "text-red-500" : "text-blue-500"}`}>
                             {paceUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
                             {f.pace}
                           </span>
                         </td>
-                        <td className="px-4 sm:px-5 py-4 font-black text-[12px]">
+                        <td className="px-4 sm:px-5 py-3 sm:py-4 font-black text-[12px]">
                           <span className={aiLabel.color}>{aiLabel.text}</span>
                         </td>
-                        <td className="px-4 sm:px-5 py-4">
+                        <td className="px-4 sm:px-5 py-3 sm:py-4">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeClass(f.status)}`}>
                             {f.status}
                           </span>
@@ -720,11 +810,11 @@ export default function FareManagement() {
 
           {/* 좌석 등급별 현황 카드 */}
           <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex justify-between items-center mb-5 flex-wrap gap-2">
-              <h3 className="font-black text-slate-800 flex items-center gap-2">
+            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+              <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm sm:text-base">
                 <LayoutGrid size={16} style={{ color: BRAND }} />
                 좌석 등급별 운임 관리
-                <span className="text-xs font-bold text-slate-400 ml-1">
+                <span className="text-xs font-bold text-slate-400 ml-1 hidden sm:inline">
                   — {selectedFlight.id} ({selectedFlight.time})
                 </span>
               </h3>
@@ -733,7 +823,7 @@ export default function FareManagement() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {selectedFlight.classes.map((cls) => {
                 const rejKey = `${selectedFlight.id}-${cls.code}`;
                 const isRejected = rejectedClasses.has(rejKey);
@@ -761,12 +851,12 @@ export default function FareManagement() {
         </section>
 
         {/* ── 우측: Profit Analysis ── */}
-        <aside className="col-span-12 lg:col-span-3 space-y-5">
-          <div className="bg-white p-5 sm:p-6 rounded-xl border border-slate-200 shadow-sm lg:sticky top-20">
-            <h2 className="text-sm font-black text-slate-800 mb-6 flex items-center gap-2 border-b pb-4 uppercase">
+        <aside className="col-span-12 lg:col-span-3 space-y-4">
+          <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm lg:sticky top-20">
+            <h2 className="text-sm font-black text-slate-800 mb-5 flex items-center gap-2 border-b pb-3 uppercase">
               <BarChart4 size={16} style={{ color: BRAND }} /> Profit Analysis
             </h2>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-[10px] font-black text-blue-600 uppercase">Revenue</span>
@@ -806,7 +896,7 @@ export default function FareManagement() {
                 data-testid="confirm-inventory-btn"
                 onClick={handleConfirmInventory}
                 disabled={confirmLoading}
-                className={`w-full py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-60 ${
+                className={`w-full py-3 sm:py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-60 ${
                   confirmDone ? "bg-green-500 text-white" : "text-white hover:opacity-90"
                 }`}
                 style={confirmDone ? {} : { backgroundColor: BRAND }}
@@ -845,9 +935,20 @@ function ClassEditCard({
   const isEditingPrice = editState?.flightId === flightId && editState.classCode === cls.code && editState.field === "price";
   const isEditingSeats = editState?.flightId === flightId && editState.classCode === cls.code && editState.field === "seats";
 
+  const isSoldOut  = cls.status === "Sold Out";
+  const isClosed   = cls.status === "Closed";
+  const isPrestige = cls.name.includes("프레스티지");
+
+  // 운임 편집: Closed 시 잠금
+  // 좌석 편집: 프레스티지만 잠금 / 일반석은 Open·Closed·Sold Out 모두 허용
+  const priceLocked = isClosed;
+  const seatsLocked = isPrestige;
+  // 상태 토글: Sold Out은 불가
+  const toggleLocked = isSoldOut;
+
   const statusColor =
     cls.status === "Open"     ? "bg-green-100 text-green-600" :
-    cls.status === "Sold Out" ? "bg-red-200 text-red-700" :
+    cls.status === "Sold Out" ? "bg-red-200 text-red-700 cursor-not-allowed" :
                                 "bg-red-100 text-red-600";
 
   const hasDiff = cls.aiPrice !== cls.price && !isRejected;
@@ -856,7 +957,9 @@ function ClassEditCard({
 
   return (
     <div className={`p-4 rounded-xl border transition-all shadow-sm space-y-3 ${
-      isRejected ? "bg-slate-100 border-slate-200 opacity-60" : "bg-slate-50 border-slate-100 hover:border-blue-200"
+      isSoldOut ? "bg-red-50 border-red-200"
+      : isClosed ? "bg-orange-50 border-orange-200"
+      : "bg-slate-50 border-slate-100 hover:border-blue-200"
     }`}>
       {/* 헤더 */}
       <div className="flex justify-between items-start">
@@ -867,10 +970,10 @@ function ClassEditCard({
           <h4 className="text-sm font-black text-slate-800 mt-1">{cls.name}</h4>
         </div>
         <button
-          onClick={() => onToggleStatus(flightId, cls.code)}
-          disabled={isRejected}
-          className={`text-[10px] font-black px-2 py-0.5 rounded cursor-pointer transition-all ${statusColor}`}
-          title="클릭하여 Open/Closed 전환"
+          onClick={() => !toggleLocked && onToggleStatus(flightId, cls.code)}
+          disabled={toggleLocked}
+          className={`text-[10px] font-black px-2 py-0.5 rounded transition-all ${statusColor}`}
+          title={isSoldOut ? "매진 — 상태 변경 불가" : "클릭하여 Open/Closed 전환"}
         >
           {cls.status}
         </button>
@@ -895,9 +998,12 @@ function ClassEditCard({
             </div>
           ) : (
             <button
-              onClick={() => !isRejected && onStartEdit(flightId, cls.code, "price", cls.price)}
-              className="font-mono font-black text-slate-800 text-sm hover:text-blue-600 transition-colors underline decoration-dotted"
-              title="클릭하여 운임 수정"
+              onClick={() => !priceLocked && onStartEdit(flightId, cls.code, "price", cls.price)}
+              disabled={priceLocked}
+              className={`font-mono font-black text-sm transition-colors ${
+                priceLocked ? "text-slate-400 cursor-not-allowed" : "text-slate-800 hover:text-blue-600 underline decoration-dotted"
+              }`}
+              title={priceLocked ? "Closed 상태 — 운임 수정 불가" : "클릭하여 운임 수정"}
             >
               {fmtW(cls.price)}
             </button>
@@ -927,11 +1033,11 @@ function ClassEditCard({
           </div>
         )}
 
-        {/* 거부된 AI 추천 비활성 표시 */}
+        {/* 거부 배지 */}
         {isRejected && (
-          <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200">
+          <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg px-3 py-1.5 border border-slate-200">
             <XIcon size={11} className="text-slate-400" />
-            <span className="text-[10px] text-slate-400 font-bold">AI 추천 거부됨</span>
+            <span className="text-[10px] text-slate-400 font-bold">AI 추천 거부됨 — 수동 편집 가능</span>
           </div>
         )}
       </div>
@@ -957,9 +1063,12 @@ function ClassEditCard({
               </div>
             ) : (
               <button
-                onClick={() => !isRejected && onStartEdit(flightId, cls.code, "seats", cls.seats)}
-                className="text-slate-600 font-black hover:text-blue-600 underline decoration-dotted transition-colors"
-                title="클릭하여 좌석 수 수정"
+                onClick={() => !seatsLocked && onStartEdit(flightId, cls.code, "seats", cls.seats)}
+                disabled={seatsLocked}
+                className={`font-black transition-colors ${
+                  seatsLocked ? "text-slate-400 cursor-not-allowed" : "text-slate-600 hover:text-blue-600 underline decoration-dotted"
+                }`}
+                title={seatsLocked ? "프레스티지 좌석 수 변경 불가" : "클릭하여 좌석 수 수정 (AI 자동 재배분)"}
               >
                 {cls.seats}석
               </button>
