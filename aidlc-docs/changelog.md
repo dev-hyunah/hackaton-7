@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-05-18 (실제 대한항공 국내선 항공편 표출)
+
+### 기능 구현: B737-900 고정 편성 → 실제 대한항공 국내선 스케줄 전면 반영
+
+- `frontend/src/data/mockData.ts`
+  - `DashboardFlight` 인터페이스에 `aircraft: string`, `totalSeats: number` 필드 추가
+  - `AIRCRAFT_CONFIG` 상수 추가: B737-900ER(200석), B737-800(158석), A220-300(130석) 좌석 배분
+  - `ROUTE_SCHEDULES` 상수 추가: 9개 노선 × 실제 KE 편명/출발시간/기종 (GMP-CJU 14편, GMP-PUS 6편, ICN-CJU 5편 등 총 45편)
+  - `buildDashboardFlights()` 전면 재작성: 고정 4편 → `ROUTE_SCHEDULES` 기반 노선별 실제 편수/기종/좌석 동적 생성
+- `frontend/src/components/FareManagement.tsx`
+  - 운항 현황 서브타이틀: 하드코딩 `"B737-900 (C8 / Y165)"` → `"{selectedFlight.aircraft} ({selectedFlight.totalSeats}석)"` 동적 표시
+  - 좌석 등급별 운임 관리 우측 배지: 하드코딩 `"C8 + Y165 = 173 Seats"` → 선택 항공편 실제 클래스별 좌석 수 합산 동적 표시
+  - 미사용 `classTagColor` 함수 제거 (TypeScript strict 오류 해소)
+- `backend/seed_data.py`
+  - `ROUTE_SCHEDULES` 딕셔너리 추가: 9개 노선 × 실제 KE 편명/출발시각/time_slot/기종
+  - `AIRCRAFT_CONFIG` 딕셔너리 추가: 기종별 C/Y/M/V/total 좌석 수
+  - Seeding 루프 변경: 노선별 `ROUTE_SCHEDULES` 순회 → 편명/기종 그대로 DB 저장
+  - `baseCost` 기종 크기 반영(B737-900ER +10%, A220-300 -12%)
+  - DB 삭제 후 재시드: **4,050 flights, 16,200 fare tiers, 7,290 competitor prices**
+
+---
+
 ## 2026-05-15
 
 ### [Code Generation] 전체 시스템 초기 생성
@@ -112,5 +134,72 @@
 ### Requirements 문서 업데이트
 - `aidlc-docs/inception/requirements/requirements.md` v3 내용 통합
   - 좌석 등급 명칭/수 확정, NFR-06 반응형 추가, FR-05/06/08 v3 반영, 기술 스택 업데이트
+
+---
+
+## 2026-05-18 (커맨드 추가 수정)
+
+### 버그 수정: FareTier not found — 클래스 코드 불일치 (B → M)
+- `backend/seed_data.py`
+  - `TIER_CONFIG`: `("B", TierCode.ECONOMY_DISCOUNT, 50)` → `("M", TierCode.ECONOMY_DISCOUNT, 85)` 수정
+  - 좌석 수 프론트 기준으로 정렬: Y=30, M=85, V=50 (총 173석)
+  - `COMPETITOR_BOOKING_CLASSES`: `["Y","B","V"]` → `["Y","M","V"]`
+  - 경쟁사 가격 시딩 조건 `cls == "B"` → `cls == "M"` 수정
+  - DB 초기화 후 재시드 (3240 flights, 12960 fare tiers)
+
+### UI 개선: 부킹 클래스 코드(C/Y/M/V) 화면에서 숨김
+- `frontend/src/components/FareManagement.tsx`
+  - 좌석 등급 카드 헤더: 클래스 코드 태그(`C` 등) 제거, 등급명만 표시
+  - AI 추천 상세 모달 서브타이틀: `cls.code` 제거
+- `frontend/src/components/CompetitorMonitor.tsx`
+  - 테이블 헤더: `C (프레스티지)` → `프레스티지` (한글명만 표시)
+  - 클래스별 카드 제목: 동일하게 한글명만 표시
+
+### UX 개선: 인벤토리 확정 시 AI 추천 버튼 처리
+- `frontend/src/components/FareManagement.tsx`
+  - `confirmedClasses` Set state 추가 (확정 처리된 클래스 추적)
+  - `handleConfirmInventory` 성공 시: 미처리 AI 추천 영역을 배지 없이 조용히 숨김 (`confirmedClasses`에 추가)
+  - `ClassEditCard.hasDiff` 조건에 `!isConfirmed` 추가
+  - `ClassEditCard` props에 `isConfirmed` 추가
+
+### UX 개선: AI 추천 없을 때 확정 버튼 숨김
+- `frontend/src/components/FareManagement.tsx`
+  - `hasPendingAi` 계산 추가: 선택 항공편에 미처리 AI 추천이 하나라도 있는지 여부
+  - 확정 버튼 및 오류 메시지를 `hasPendingAi === true` 일 때만 렌더링
+
+---
+
+## 2026-05-18 (v3-hyunah 개발 구현)
+
+### 버그 수정: 인벤토리 실시간 통제 확정 — FareTier not found 오류
+- `backend/app/repositories/fare_repository.py` — `get_flight_by_number()` 메서드 추가 (편명으로 Flight 조회, 최근 날짜 기준)
+- `backend/app/services/fare_service.py` — `_resolve_flight_id()` 추가: UUID가 아닌 편명(KE1211 등) 입력 시 DB flight.id로 자동 변환
+- `backend/app/services/ai_recommendation_service.py` — `request_strategy_analysis()`에 동일 flight_number fallback 적용
+- `frontend/src/components/FareManagement.tsx`
+  - `confirmError` state 추가
+  - `handleConfirmInventory`: 백엔드 오류 시 에러 메시지 표시, 성공/실패 케이스 분리 (기존: 오류 시에도 성공으로 처리)
+  - 확정 버튼 상태 3단계: 기본(네이비) / 저장 완료(초록) / 저장 실패(빨강) + 오류 메시지 박스
+
+### 기능 구현: AI 전략 분석 — Claude API 실제 호출
+- `ai_engine/claude_ai_engine.py` 신규 생성 — Claude claude-sonnet-4-6 모델 호출, ANTHROPIC_API_KEY 없으면 MockAiEngine fallback
+- `backend/app/services/ai_recommendation_service.py` — `MockAiEngine` → `ClaudeAiEngine` 교체
+- `backend/app/main.py` — `load_dotenv()` 추가 (`.env` 파일 자동 로드)
+- `backend/requirements.txt` — `anthropic>=0.50.0` 추가
+- `backend/.env.example` 신규 생성 — ANTHROPIC_API_KEY 설정 안내
+- `backend/seed_data.py` 실행 — DB 초기 데이터 생성 (3240 flights, 12960 fare tiers)
+
+---
+
+## 2026-05-18 (v3-hyunah 요구사항 반영)
+
+### Requirements 문서 업데이트 (requirements_delta_v3_hyunah.md 반영)
+- `aidlc-docs/inception/requirements/requirements_delta_v3.md`
+  - Profit Analysis 영역: "FareTier not found: KE1211/C" 오류 버그 수정 요건 추가
+  - AI 전략 분석 요청 영역: AI model 실제 호출 요건 명확화 ([hyunah] 태그로 기여자 표시)
+- `aidlc-docs/inception/requirements/requirements.md`
+  - FR-03 AI 전략 분석 요청: 'AI 전략 분석 시작' 버튼 클릭 시 AI model 실제 호출 요건 반영 (하드코딩 제거 명시)
+  - FR-04 실시간 대시보드: 인벤토리 실시간 통제 확정 버튼 FareTier 미존재 오류 수정 요건 반영
+  - 버전 이력 테이블에 v3-hyunah 항목 추가
+  - 관리 정책 헤더 통합 기준에 v3-hyunah 명시
 
 ---

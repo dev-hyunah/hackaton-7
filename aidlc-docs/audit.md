@@ -1,5 +1,83 @@
 # AI-DLC Audit Log
 
+## 실제 대한항공 국내선 항공편 표출 구현
+**Timestamp**: 2026-05-18T09:00:00Z
+**User Input**: "requirements_delta_v3_hyunah.md 을 참고해서 추가개발해줘." (내용: 항공편은 B737-900 기준(C8/Y165) 에 제한하지 말고, 실제 대한항공에서 운항하는 국내선 항공편들을 모두 표출해줘.)
+**AI Response**: 3개 파일 수정 완료.
+1) `frontend/src/data/mockData.ts` — DashboardFlight에 aircraft/totalSeats 필드 추가, AIRCRAFT_CONFIG(기종별 좌석), ROUTE_SCHEDULES(9노선 45편 실제 KE 편명/시간/기종) 추가, buildDashboardFlights() 동적 생성으로 전면 재작성.
+2) `frontend/src/components/FareManagement.tsx` — 운항현황 서브타이틀 및 좌석배지 하드코딩 제거, 선택 항공편 aircraft/totalSeats/classes 기반 동적 표시, 미사용 classTagColor 제거(TS 오류 해소).
+3) `backend/seed_data.py` — ROUTE_SCHEDULES/AIRCRAFT_CONFIG 추가, 노선별 실제 편명·기종·좌석 수로 시딩 로직 전면 변경. DB 재시드: 4,050 flights, 16,200 fare tiers, 7,290 competitor prices.
+**Context**: CONSTRUCTION - Code Generation - requirements_delta_v3_hyunah.md 기반 추가 개발
+**변경 파일**:
+  - `frontend/src/data/mockData.ts` — ROUTE_SCHEDULES/AIRCRAFT_CONFIG 추가, buildDashboardFlights() 재작성
+  - `frontend/src/components/FareManagement.tsx` — 하드코딩 기종/좌석 표시 동적화, classTagColor 제거
+  - `backend/seed_data.py` — 노선별 실제 편명/기종/좌석 시딩 로직 전면 변경
+
+---
+
+## 커맨드 추가 수정 (4건)
+**Timestamp**: 2026-05-18T08:00:00Z
+
+### [1] FareTier not found: KE1201/M 오류 재발
+**User Input**: "여전히 'FareTier not found: KE1201/M' 오류 발생."
+**AI Response**: 원인 — seed_data TIER_CONFIG의 클래스 코드가 `B`(일반석 할인)인데 프론트 mockData는 `M` 사용. seed_data.py TIER_CONFIG를 `M/85석`으로 수정, 경쟁사 시딩 조건도 `M`으로 변경, DB 초기화 후 재시드.
+**변경 파일**: `backend/seed_data.py`
+
+---
+
+### [2] 부킹 클래스 코드(C/Y/M/V) 화면에서 숨김
+**User Input**: "부킹클래스(C,Y,M,V) 등을 화면에서 안보이게 해줘"
+**AI Response**: FareManagement 등급 카드 헤더와 AI 추천 상세 모달에서 cls.code 제거. CompetitorMonitor 테이블 헤더 및 카드 제목에서 코드 제거, 한글명만 표시.
+**변경 파일**: `frontend/src/components/FareManagement.tsx`, `frontend/src/components/CompetitorMonitor.tsx`
+
+---
+
+### [3] 확정 버튼 클릭 시 AI 추천 버튼 처리 방식 결정
+**User Input**: "'인벤토리 실시간 통제 확정' 버튼을 통해 저장 시, 좌석 등급 별 운임관리에서 추천 운임 적용 버튼이 여전히 뜨고 있습니다. 옳은 동작인가요?" → "B (배지 없이 추천 영역만 조용히 숨김)"
+**AI Response**: `confirmedClasses` Set state 추가. 확정 성공 시 미처리 AI 추천을 `confirmedClasses`에 추가 → `hasDiff` 조건에 `!isConfirmed` 적용. 거부됨 배지 없이 추천 영역만 사라지도록 처리.
+**변경 파일**: `frontend/src/components/FareManagement.tsx`
+
+---
+
+### [4] AI 추천 없을 때 확정 버튼 숨김
+**User Input**: "선택된 항공편에 AI 추천항목이 없다면, 확정하기 버튼 안보이게 해줘"
+**AI Response**: `hasPendingAi` 변수 추가 (선택 항공편 클래스 중 미처리 AI 추천 존재 여부). 확정 버튼 및 오류 메시지를 `hasPendingAi` 조건부 렌더링으로 변경.
+**변경 파일**: `frontend/src/components/FareManagement.tsx`
+
+---
+
+## v3-hyunah 추가 개발 구현
+**Timestamp**: 2026-05-18T07:20:00Z
+**User Input**: "requirements_delta_v3_hyunah.md 을 참고해서, 추가개발해줘."
+**AI Response**: 두 가지 항목 구현 완료.
+1) FareTier not found 버그 수정 — fare_repository에 get_flight_by_number() 추가, fare_service에 _resolve_flight_id() 추가(편명→UUID 자동 변환), 프론트엔드 handleConfirmInventory 오류 피드백 개선(confirmError state, 실패 시 빨강 버튼+메시지 표시).
+2) AI 전략 분석 Claude API 실제 호출 — ai_engine/claude_ai_engine.py 신규 생성(ANTHROPIC_API_KEY 있으면 Claude claude-sonnet-4-6 호출, 없으면 MockAiEngine fallback), AiRecommendationService에서 ClaudeAiEngine 사용, main.py load_dotenv() 추가, requirements.txt anthropic>=0.50.0 추가.
+**Context**: CONSTRUCTION - Code Generation - requirements_delta_v3_hyunah.md 기반 추가 개발
+**변경 파일**:
+  - `backend/app/repositories/fare_repository.py` — get_flight_by_number() 추가
+  - `backend/app/services/fare_service.py` — _resolve_flight_id() 추가
+  - `backend/app/services/ai_recommendation_service.py` — ClaudeAiEngine 교체, flight_number fallback
+  - `backend/app/main.py` — load_dotenv() 추가
+  - `backend/requirements.txt` — anthropic 추가
+  - `backend/.env.example` — 신규 생성
+  - `ai_engine/claude_ai_engine.py` — 신규 생성
+  - `frontend/src/components/FareManagement.tsx` — confirmError state, 오류 UI 개선
+
+---
+
+## Requirements Delta v3-hyunah 반영
+**Timestamp**: 2026-05-18T07:00:00Z
+**User Input**: "requirements_delta_v3_hyunah.md를 참고해서 aidlc 방법론에 맞게 수정을 진행해줘. requirements_delta_v3_hyunah.md는 requirements_delta_v3.md에 반영해주고, 그 내용을 전체수정사항(requirements.md)에도 반영 반영해줘. 그리고 변경이력을 모두 changelog.md와 audit.md에 기록해줘."
+**AI Response**: requirements_delta_v3_hyunah.md의 2개 항목(인벤토리 확정 버튼 FareTier 오류 버그 수정 요건, AI 전략 분석 AI model 실제 호출 요건)을 requirements_delta_v3.md에 [hyunah] 태그와 함께 추가. requirements.md의 FR-03 및 FR-04 섹션에 해당 요건 반영, 버전 이력 테이블에 v3-hyunah 항목 추가. changelog.md에 변경 내용 기록.
+**Context**: INCEPTION - Requirements Analysis - Delta v3-hyunah 반영 (요구사항 문서 동기화)
+**변경 파일**:
+  - `aidlc-docs/inception/requirements/requirements_delta_v3.md` — hyunah 항목 2건 추가
+  - `aidlc-docs/inception/requirements/requirements.md` — FR-03, FR-04 반영, 버전 이력 업데이트
+  - `aidlc-docs/changelog.md` — v3-hyunah 변경이력 기록
+  - `aidlc-docs/audit.md` — 이 항목
+
+---
+
 ## Requirements 파일 구조 재편
 **Timestamp**: 2026-05-18T00:00:00Z
 **User Input**: "지금 requirements.md는 전체가 아니고 v1의 상태로 알고 있어. 이 부분을 다시 한번 확인해보고 전체요구사항이 아니면 파일이름을 requirements_delta_v1.md로 변경하고, 전체 요구사항파일(requirements.md)을 새로 생성해줘. 또, requirements_v2.md도 requirements_delta_v2.md로 이름을 변경해줘."

@@ -67,8 +67,19 @@ class FareService:
             )
         return result
 
+    def _resolve_flight_id(self, flight_id: str) -> str:
+        """UUID가 아닌 편명(KE1211 등)으로 조회된 경우 실제 DB flight.id로 변환."""
+        flight = self.fare_repo.get_flight_by_id(flight_id)
+        if flight:
+            return flight_id
+        flight = self.fare_repo.get_flight_by_number(flight_id)
+        if flight:
+            return flight.id
+        return flight_id
+
     def update_fare(self, flight_id: str, class_code: str, new_price: int, updated_by: str) -> FareUpdateResponse:
-        fare_tier = self.fare_repo.get_fare_tier(flight_id, class_code)
+        resolved_id = self._resolve_flight_id(flight_id)
+        fare_tier = self.fare_repo.get_fare_tier(resolved_id, class_code)
         if fare_tier is None:
             raise ValueError(f"FareTier not found: {flight_id}/{class_code}")
         old_price = fare_tier.current_price
@@ -82,7 +93,7 @@ class FareService:
             changed_by=updated_by,
         )
         return FareUpdateResponse(
-            flight_id=flight_id,
+            flight_id=resolved_id,
             class_code=class_code,
             old_price=old_price,
             new_price=new_price,

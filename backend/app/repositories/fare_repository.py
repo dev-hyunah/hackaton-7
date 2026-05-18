@@ -17,6 +17,14 @@ class FareRepository:
     def get_flight_by_id(self, flight_id: str) -> Flight | None:
         return self.db.query(Flight).filter(Flight.id == flight_id).first()
 
+    def get_flight_by_number(self, flight_number: str) -> Flight | None:
+        return (
+            self.db.query(Flight)
+            .filter(Flight.flight_number == flight_number)
+            .order_by(Flight.departure_date.asc())
+            .first()
+        )
+
     def get_fare_tiers_by_flight(self, flight_id: str) -> list[FareTier]:
         return self.db.query(FareTier).filter(FareTier.flight_id == flight_id).all()
 

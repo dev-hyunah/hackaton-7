@@ -120,7 +120,7 @@ export default function CompetitorMonitor({ refreshKey }: { refreshKey?: number 
                 <th className="text-left px-4 py-3 font-semibold text-gray-600">항공사</th>
                 {CLASSES.map((cls) => (
                   <th key={cls} className="text-right px-4 py-3 font-semibold text-gray-600">
-                    {cls} <span className="text-gray-400 font-normal text-xs">({CLASS_LABELS[cls]})</span>
+                    {CLASS_LABELS[cls]}
                   </th>
                 ))}
               </tr>
@@ -188,7 +188,7 @@ export default function CompetitorMonitor({ refreshKey }: { refreshKey?: number 
             <div key={cls} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className="font-bold text-gray-700">
-                  {cls} <span className="text-gray-400 font-normal text-sm">({CLASS_LABELS[cls]})</span>
+                  {CLASS_LABELS[cls]}
                 </span>
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isLowest ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"}`}>
                   {isLowest ? "최저가" : "최저가 아님"}

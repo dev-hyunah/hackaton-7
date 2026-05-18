@@ -10,7 +10,7 @@ from app.schemas.schemas import (
     AiRecommendationSchema, ApprovalResponse, RejectionResponse,
     StrategyAnalysisSchema,
 )
-from ai_engine.mock_ai_engine import MockAiEngine
+from ai_engine.claude_ai_engine import ClaudeAiEngine
 
 
 class AiRecommendationService:
@@ -18,7 +18,7 @@ class AiRecommendationService:
         self.db = db
         self.fare_repo = FareRepository(db)
         self.history_repo = PriceHistoryRepository(db)
-        self.ai_engine = MockAiEngine()
+        self.ai_engine = ClaudeAiEngine()
 
     def get_recommendations(self, route_id: str | None = None) -> list[AiRecommendationSchema]:
         query = self.db.query(AiRecommendation)
@@ -83,14 +83,24 @@ class AiRecommendationService:
         return RejectionResponse(recommendation_id=recommendation_id, status="rejected")
 
     def request_strategy_analysis(self, issue_text: str, route_id: str, flight_id: str) -> StrategyAnalysisSchema:
-        flight = self.fare_repo.get_flight_by_id(flight_id)
-        tiers = self.fare_repo.get_fare_tiers_by_flight(flight_id) if flight else []
-        rec_price = min((t.ai_recommended_price or t.current_price for t in tiers), default=0)
-        result = self.ai_engine.analyze_strategy(issue_text, {"route": route_id, "flight_id": flight_id})
+        flight = self.fare_repo.get_flight_by_id(flight_id) or self.fare_repo.get_flight_by_number(flight_id)
+        resolved_id = flight.id if flight else flight_id
+        tiers = self.fare_repo.get_fare_tiers_by_flight(resolved_id) if flight else []
+        base_price = min((t.current_price for t in tiers), default=0) if tiers else 0
+        result = self.ai_engine.analyze_strategy(issue_text, {
+            "route_id": route_id,
+            "flight_id": flight_id,
+            "flight_number": flight.flight_number if flight else flight_id,
+            "load_factor": round(flight.load_factor) if flight else 70,
+        })
+        price_factor = float(result.get("price_factor", 1.0))
+        recommended_price = result.get("recommended_price") or (
+            round(base_price * price_factor / 1000) * 1000 if base_price else 0
+        )
         return StrategyAnalysisSchema(
             strategy_id=str(uuid.uuid4()),
             description=result.get("description", f'"{issue_text}" 분석 결과 — 즉각 운임 조정 권고'),
             flight_id=flight_id,
-            recommended_price=result.get("recommended_price", rec_price),
+            recommended_price=int(recommended_price),
             created_at=datetime.utcnow().isoformat(),
         )

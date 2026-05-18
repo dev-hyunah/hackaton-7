@@ -233,6 +233,8 @@ export interface DashboardFlight {
   baseCost: number;
   classes: DashboardClass[];
   reason: string;      // AI 분석 근거
+  aircraft: string;    // 기종 (예: B737-900ER)
+  totalSeats: number;  // 총 좌석 수
 }
 
 export interface WeekDay {
@@ -267,72 +269,185 @@ export const KE_DOMESTIC_ROUTES = [
   "ICN-CJU", "ICN-PUS", "GMP-KPO", "GMP-RSU",
 ];
 
-// B737-900: 프레스티지 8석 / 일반석 정상 30석 / 일반석 할인 85석 / 일반석 특가 50석 = 173석
-export function buildDashboardFlights(route: string): DashboardFlight[] {
-  const routeMultiplier: Record<string, number> = {
-    "GMP-CJU": 1.15, "ICN-CJU": 1.1, "GMP-PUS": 0.9,
-    "GMP-CJJ": 0.85, "GMP-TAE": 0.8, "GMP-KWJ": 0.75,
-    "ICN-PUS": 0.88, "GMP-KPO": 0.78, "GMP-RSU": 0.72,
-  };
-  const mul = routeMultiplier[route] ?? 1.0;
-  const base = Math.round(85000 * mul);
+// 노선별 실제 대한항공 국내선 항공편 스케줄 (기종·좌석 수 포함)
+// 기종별 좌석 구성:
+//   B737-900ER : 프레스티지 8 / 일반석 정상 35 / 일반석 할인 95 / 일반석 특가 62 = 200석 (실제 B737-9 국내선 기준)
+//   B737-800   : 프레스티지 8 / 일반석 정상 28 / 일반석 할인 76 / 일반석 특가 46 = 158석
+//   A220-300   : 프레스티지 4 / 일반석 정상 22 / 일반석 할인 62 / 일반석 특가 42 = 130석
 
-  return [
-    {
-      id: "KE1201", time: "07:30", timeSlot: "아침", status: "수요 급증",
-      lf: 88, pace: "+12%",
-      currentPrice: Math.round(base * 1.24),
-      aiRecommended: Math.round(base * 1.39),
-      baseCost: Math.round(11500000 * mul),
-      classes: [
-        { name: "프레스티지", code: "C", seats: 8, sold: 7, price: Math.round(base * 1.94), aiPrice: Math.round(base * 2.12), status: "Open" },
-        { name: "일반석 정상", code: "Y", seats: 30, sold: 28, price: Math.round(base * 1.24), aiPrice: Math.round(base * 1.39), status: "Open" },
-        { name: "일반석 할인", code: "M", seats: 85, sold: 75, price: Math.round(base * 0.95), aiPrice: Math.round(base * 1.05), status: "Open" },
-        { name: "일반석 특가", code: "V", seats: 50, sold: 42, price: Math.round(base * 0.73), aiPrice: Math.round(base * 0.73), status: "Closed" },
-      ],
-      reason: "출발 7일 전, 예약 페이스가 과거 평균 대비 15% 빠름. 프레스티지 거의 마감. 일반석 정상 운임 즉시 인상 권고.",
-    },
-    {
-      id: "KE1205", time: "10:15", timeSlot: "오전", status: "안정적",
-      lf: 62, pace: "+2%",
-      currentPrice: base,
-      aiRecommended: base,
-      baseCost: Math.round(10800000 * mul),
-      classes: [
-        { name: "프레스티지", code: "C", seats: 8, sold: 3, price: Math.round(base * 1.82), aiPrice: Math.round(base * 1.82), status: "Open" },
-        { name: "일반석 정상", code: "Y", seats: 30, sold: 18, price: Math.round(base * 1.12), aiPrice: Math.round(base * 1.12), status: "Open" },
-        { name: "일반석 할인", code: "M", seats: 85, sold: 55, price: Math.round(base * 0.88), aiPrice: Math.round(base * 0.88), status: "Open" },
-        { name: "일반석 특가", code: "V", seats: 50, sold: 31, price: Math.round(base * 0.68), aiPrice: Math.round(base * 0.68), status: "Open" },
-      ],
-      reason: "전형적인 비선호 시간대 패턴. 전 클래스 인벤토리 개방 유지 권고. 현재 운임 수준 적정.",
-    },
-    {
-      id: "KE1211", time: "13:45", timeSlot: "오후", status: "수요 저조",
-      lf: 45, pace: "-5%",
-      currentPrice: Math.round(base * 0.93),
-      aiRecommended: Math.round(base * 0.85),
-      baseCost: Math.round(10200000 * mul),
-      classes: [
-        { name: "프레스티지", code: "C", seats: 8, sold: 1, price: Math.round(base * 1.71), aiPrice: Math.round(base * 1.65), status: "Open" },
-        { name: "일반석 정상", code: "Y", seats: 30, sold: 10, price: Math.round(base * 1.05), aiPrice: Math.round(base * 0.97), status: "Open" },
-        { name: "일반석 할인", code: "M", seats: 85, sold: 35, price: Math.round(base * 0.82), aiPrice: Math.round(base * 0.76), status: "Open" },
-        { name: "일반석 특가", code: "V", seats: 50, sold: 32, price: Math.round(base * 0.58), aiPrice: Math.round(base * 0.55), status: "Open" },
-      ],
-      reason: "예약 유입 속도 저조. 일반석 특가 공급 확대 및 일반석 할인 운임 인하 필요.",
-    },
-    {
-      id: "KE1223", time: "18:20", timeSlot: "저녁", status: "매진임박",
-      lf: 94, pace: "+20%",
-      currentPrice: Math.round(base * 1.32),
-      aiRecommended: Math.round(base * 1.59),
-      baseCost: Math.round(12000000 * mul),
-      classes: [
-        { name: "프레스티지", code: "C", seats: 8, sold: 8, price: Math.round(base * 2.06), aiPrice: Math.round(base * 2.35), status: "Sold Out" },
-        { name: "일반석 정상", code: "Y", seats: 30, sold: 30, price: Math.round(base * 1.32), aiPrice: Math.round(base * 1.59), status: "Sold Out" },
-        { name: "일반석 할인", code: "M", seats: 85, sold: 82, price: Math.round(base * 1.02), aiPrice: Math.round(base * 1.18), status: "Open" },
-        { name: "일반석 특가", code: "V", seats: 50, sold: 43, price: Math.round(base * 0.81), aiPrice: Math.round(base * 0.81), status: "Closed" },
-      ],
-      reason: "프레스티지·일반석 정상 전석 매진. 일반석 할인 잔여 3석. 일반석 특가 즉시 마감 후 할인 운임 즉시 인상 필요.",
-    },
+interface RouteSchedule {
+  flightNo: string;
+  time: string;
+  timeSlot: "아침" | "오전" | "오후" | "저녁";
+  aircraft: "B737-900ER" | "B737-800" | "A220-300";
+}
+
+const AIRCRAFT_CONFIG: Record<string, { c: number; y: number; m: number; v: number; total: number }> = {
+  "B737-900ER": { c: 8,  y: 35, m: 95, v: 62, total: 200 },
+  "B737-800":   { c: 8,  y: 28, m: 76, v: 46, total: 158 },
+  "A220-300":   { c: 4,  y: 22, m: 62, v: 42, total: 130 },
+};
+
+const ROUTE_SCHEDULES: Record<string, RouteSchedule[]> = {
+  "GMP-CJU": [
+    { flightNo: "KE1201", time: "06:30", timeSlot: "아침",  aircraft: "B737-900ER" },
+    { flightNo: "KE1203", time: "07:30", timeSlot: "아침",  aircraft: "B737-800"   },
+    { flightNo: "KE1205", time: "08:30", timeSlot: "아침",  aircraft: "B737-900ER" },
+    { flightNo: "KE1207", time: "09:30", timeSlot: "오전",  aircraft: "B737-800"   },
+    { flightNo: "KE1209", time: "10:35", timeSlot: "오전",  aircraft: "A220-300"   },
+    { flightNo: "KE1211", time: "11:40", timeSlot: "오전",  aircraft: "B737-800"   },
+    { flightNo: "KE1213", time: "12:50", timeSlot: "오후",  aircraft: "B737-900ER" },
+    { flightNo: "KE1215", time: "14:00", timeSlot: "오후",  aircraft: "B737-800"   },
+    { flightNo: "KE1217", time: "15:10", timeSlot: "오후",  aircraft: "A220-300"   },
+    { flightNo: "KE1219", time: "16:20", timeSlot: "오후",  aircraft: "B737-800"   },
+    { flightNo: "KE1221", time: "17:30", timeSlot: "저녁",  aircraft: "B737-900ER" },
+    { flightNo: "KE1223", time: "18:40", timeSlot: "저녁",  aircraft: "B737-800"   },
+    { flightNo: "KE1225", time: "19:50", timeSlot: "저녁",  aircraft: "B737-900ER" },
+    { flightNo: "KE1227", time: "21:00", timeSlot: "저녁",  aircraft: "B737-800"   },
+  ],
+  "GMP-PUS": [
+    { flightNo: "KE1401", time: "07:00", timeSlot: "아침",  aircraft: "B737-800" },
+    { flightNo: "KE1403", time: "09:10", timeSlot: "오전",  aircraft: "B737-800" },
+    { flightNo: "KE1405", time: "12:20", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE1407", time: "15:30", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE1409", time: "18:40", timeSlot: "저녁",  aircraft: "B737-800" },
+    { flightNo: "KE1411", time: "21:00", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+  "GMP-CJJ": [
+    { flightNo: "KE1501", time: "07:40", timeSlot: "아침",  aircraft: "B737-800" },
+    { flightNo: "KE1503", time: "11:00", timeSlot: "오전",  aircraft: "B737-800" },
+    { flightNo: "KE1505", time: "14:30", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE1507", time: "18:20", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+  "GMP-TAE": [
+    { flightNo: "KE1601", time: "07:50", timeSlot: "아침",  aircraft: "B737-800" },
+    { flightNo: "KE1603", time: "11:30", timeSlot: "오전",  aircraft: "B737-800" },
+    { flightNo: "KE1605", time: "15:00", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE1607", time: "19:10", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+  "GMP-KWJ": [
+    { flightNo: "KE1701", time: "08:10", timeSlot: "아침",  aircraft: "B737-800" },
+    { flightNo: "KE1703", time: "12:40", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE1705", time: "17:50", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+  "ICN-CJU": [
+    { flightNo: "KE1801", time: "08:00", timeSlot: "아침",  aircraft: "B737-900ER" },
+    { flightNo: "KE1803", time: "10:30", timeSlot: "오전",  aircraft: "B737-900ER" },
+    { flightNo: "KE1805", time: "13:00", timeSlot: "오후",  aircraft: "B737-900ER" },
+    { flightNo: "KE1807", time: "16:00", timeSlot: "오후",  aircraft: "B737-900ER" },
+    { flightNo: "KE1809", time: "19:30", timeSlot: "저녁",  aircraft: "B737-900ER" },
+  ],
+  "ICN-PUS": [
+    { flightNo: "KE1901", time: "07:30", timeSlot: "아침",  aircraft: "B737-800" },
+    { flightNo: "KE1903", time: "12:00", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE1905", time: "18:30", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+  "GMP-KPO": [
+    { flightNo: "KE2001", time: "08:20", timeSlot: "아침",  aircraft: "B737-800" },
+    { flightNo: "KE2003", time: "13:10", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE2005", time: "18:00", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+  "GMP-RSU": [
+    { flightNo: "KE2101", time: "09:00", timeSlot: "오전",  aircraft: "B737-800" },
+    { flightNo: "KE2103", time: "14:20", timeSlot: "오후",  aircraft: "B737-800" },
+    { flightNo: "KE2105", time: "19:40", timeSlot: "저녁",  aircraft: "B737-800" },
+  ],
+};
+
+const ROUTE_BASE_PRICE: Record<string, number> = {
+  "GMP-CJU": 98000, "ICN-CJU": 105000, "GMP-PUS": 82000,
+  "GMP-CJJ": 78000, "GMP-TAE": 75000,  "GMP-KWJ": 70000,
+  "ICN-PUS": 80000, "GMP-KPO": 72000,  "GMP-RSU": 68000,
+};
+
+const ROUTE_BASE_COST: Record<string, number> = {
+  "GMP-CJU": 12000000, "ICN-CJU": 13000000, "GMP-PUS": 10000000,
+  "GMP-CJJ": 9500000,  "GMP-TAE": 9000000,  "GMP-KWJ": 8500000,
+  "ICN-PUS": 9800000,  "GMP-KPO": 8800000,  "GMP-RSU": 8200000,
+};
+
+// 편 상태 및 LF/pace 패턴 (시간대 + 인덱스 기반 결정론적 생성)
+function flightPattern(idx: number, timeSlot: string): { lf: number; pace: string; status: DashboardFlight["status"] } {
+  const patterns = [
+    { lf: 88, pace: "+12%", status: "수요 급증"  as const },
+    { lf: 62, pace: "+2%",  status: "안정적"    as const },
+    { lf: 45, pace: "-5%",  status: "수요 저조" as const },
+    { lf: 94, pace: "+20%", status: "매진임박"  as const },
+    { lf: 73, pace: "+5%",  status: "안정적"    as const },
+    { lf: 55, pace: "-3%",  status: "수요 저조" as const },
+    { lf: 81, pace: "+8%",  status: "수요 급증" as const },
   ];
+  const base = patterns[idx % patterns.length];
+  // 아침·저녁 시간대 LF 소폭 가중
+  const lfBoost = (timeSlot === "아침" || timeSlot === "저녁") ? 5 : 0;
+  return { ...base, lf: Math.min(99, base.lf + lfBoost) };
+}
+
+export function buildDashboardFlights(route: string): DashboardFlight[] {
+  const schedules = ROUTE_SCHEDULES[route] ?? ROUTE_SCHEDULES["GMP-CJU"];
+  const basePrice = ROUTE_BASE_PRICE[route] ?? 85000;
+  const baseCostBase = ROUTE_BASE_COST[route] ?? 11000000;
+
+  return schedules.map((sched, idx) => {
+    const cfg = AIRCRAFT_CONFIG[sched.aircraft];
+    const { lf, pace, status } = flightPattern(idx, sched.timeSlot);
+    const timeMul = (sched.timeSlot === "아침" || sched.timeSlot === "저녁") ? 1.12 : 0.97;
+    const base = Math.round(basePrice * timeMul);
+
+    // 기종별 baseCost 보정 (대형기일수록 고정비 증가)
+    const sizeMul = sched.aircraft === "B737-900ER" ? 1.10 : sched.aircraft === "A220-300" ? 0.88 : 1.0;
+    const baseCost = Math.round(baseCostBase * sizeMul);
+
+    const soldRatio = lf / 100;
+    const hasAiRec = idx % 3 !== 1; // 3편 중 2편에 AI 추천 존재
+
+    return {
+      id: sched.flightNo,
+      time: sched.time,
+      timeSlot: sched.timeSlot,
+      status,
+      lf,
+      pace,
+      aircraft: sched.aircraft,
+      totalSeats: cfg.total,
+      currentPrice: base,
+      aiRecommended: hasAiRec ? Math.round(base * (lf >= 80 ? 1.12 : 0.92)) : base,
+      baseCost,
+      classes: [
+        {
+          name: "프레스티지", code: "C", seats: cfg.c,
+          sold: Math.min(cfg.c, Math.round(cfg.c * Math.min(soldRatio * 1.1, 1))),
+          price: Math.round(base * 1.95),
+          aiPrice: hasAiRec ? Math.round(base * (lf >= 80 ? 2.18 : 1.80)) : Math.round(base * 1.95),
+          status: Math.round(cfg.c * soldRatio * 1.1) >= cfg.c ? "Sold Out" : "Open",
+        },
+        {
+          name: "일반석 정상", code: "Y", seats: cfg.y,
+          sold: Math.min(cfg.y, Math.round(cfg.y * soldRatio * 1.05)),
+          price: Math.round(base * 1.22),
+          aiPrice: hasAiRec ? Math.round(base * (lf >= 80 ? 1.38 : 1.10)) : Math.round(base * 1.22),
+          status: Math.round(cfg.y * soldRatio * 1.05) >= cfg.y ? "Sold Out" : "Open",
+        },
+        {
+          name: "일반석 할인", code: "M", seats: cfg.m,
+          sold: Math.min(cfg.m, Math.round(cfg.m * soldRatio)),
+          price: Math.round(base * 0.94),
+          aiPrice: hasAiRec ? Math.round(base * (lf >= 80 ? 1.05 : 0.85)) : Math.round(base * 0.94),
+          status: "Open",
+        },
+        {
+          name: "일반석 특가", code: "V", seats: cfg.v,
+          sold: Math.min(cfg.v, Math.round(cfg.v * soldRatio * 0.9)),
+          price: Math.round(base * 0.72),
+          aiPrice: Math.round(base * 0.72),
+          status: lf >= 85 ? "Closed" : "Open",
+        },
+      ],
+      reason: lf >= 85
+        ? `예약 페이스 과거 대비 빠름(LF ${lf}%). ${sched.aircraft} 운항. 상위 클래스 운임 즉시 인상 권고.`
+        : lf <= 55
+        ? `예약 유입 저조(LF ${lf}%). ${sched.aircraft} 운항. 하위 클래스 공급 확대 및 할인 운임 인하 필요.`
+        : `수요 안정적(LF ${lf}%). ${sched.aircraft} 운항. 현행 운임 수준 유지 권고.`,
+    };
+  });
 }
