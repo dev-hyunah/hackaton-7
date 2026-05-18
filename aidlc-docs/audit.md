@@ -468,5 +468,42 @@
 1. PDF/DOCX 다운로드 시 'PDF 문서를 로드하지 못했습니다.' 오류가 발생하지 않도록 수정 필요 (신규)
 2. 이메일 전송 시 pdf·docx 파일을 첨부파일로 포함하여 전송 (신규)
    **Context**: INCEPTION - Requirements Analysis 업데이트 (requirement_report.md → requirements_delta_v3.md → requirements.md 반영)
+## requirements_delta_jin.md 구현
+**Timestamp**: 2026-05-18T01:00:00Z
+**User Input**: "requirements_delta_jin.md를 참고해서 aidlc 방법론에 맞게 수정을 진행해줘. requirements_delta_jin.md는 requirements_delta_v3.md에 반영해주고, 그 내용을 전체수정사항(requirements.md)에도 반영 반영해줘. 그리고 변경이력을 모두 changelog.md와 audit.md에 기록해줘."
+**AI Response**: "FareManagement.tsx 전면 수정 완료 (여백 개선, 햄버거 제거, 슬라이드 애니메이션, Sold Out 완전 잠금, AI 거부 음영 제거, Closed 세분화+L/F 기반 이관). requirements_delta_v3.md에 jin 내용 병합, requirements.md 업데이트, changelog/audit 기록 완료."
+**Context**: requirements_delta_jin.md → FareManagement 구현 + 요구사항 문서 전체 반영
+
+---
+
+## requirements_delta_jin.md v2 구현
+**Timestamp**: 2026-05-18T02:00:00Z
+**User Input**: "requirements_delta_jin.md를 참고해서 aidlc 방법론에 맞게 수정을 진행해줘. requirements_delta_jin.md는 requirements_delta_v3.md에 반영해주고, 그 내용을 전체수정사항(requirements.md)에도 반영 반영해줘. 그리고 변경이력을 모두 changelog.md와 audit.md에 기록해줘."
+**AI Response**: "FareManagement.tsx 좌석 로직 전면 개편 완료. redistributeClosedSeatsAI 제거, aiReallocateSeats 신규 구현(총 좌석 불변·AI 재배분·alert 배너), ClassEditCard 잠금 조건 분리(가격=전부허용, 좌석=프레스티지만 잠금). requirements_delta_v3.md 병합, requirements.md·changelog·audit 기록 완료."
+**Context**: requirements_delta_jin.md (2차) 전체 구현 — 좌석 수 관리 로직 최신화
+
+---
+
+## Closed 운임 잠금
+**Timestamp**: 2026-05-18T02:30:00Z
+**User Input**: "closed시 가격은 수정 못하도록 잠궈주고 해당내용도 기록해줘."
+**AI Response**: "ClassEditCard의 priceLocked = isClosed로 변경. Closed 상태의 운임 버튼 disabled 처리 및 스타일 반영. changelog/audit 기록 완료."
+**Context**: FareManagement ClassEditCard 운임 잠금 조건 수정
+
+---
+
+## Sold Out 좌석 증가 시 Open 복구 버그 수정
+**Timestamp**: 2026-05-18T03:00:00Z
+**User Input**: "방금 sold out 상태에서 좌석을 늘렸는데 open으로 전환이 안되었어. 확인해서 수정해줘."
+**AI Response**: "aiReallocateSeats() delta>0 경로에서 변경 대상 등급의 Sold Out→Open 복구 조건 누락 확인 및 수정 완료."
+**Context**: FareManagement aiReallocateSeats 버그 수정
+
+---
+
+## [Requirements Cleanup] requirements_delta_jin.md 검증 및 삭제
+**Timestamp**: 2026-05-18T00:00:00Z
+**User Input**: "requirements_delta_jin.md 파일을 제거하려고 해. 해당 내용을 requirements_delta_v3.md에 모두 기록되어 있는지 확인 및 기록해주고, requirements.md에도 기록이 되어 있는지 확인 및 기록해주고, requirements_delta_jin.md를 제거해줘."
+**AI Response**: "requirements_delta_v3.md 완전 반영 확인. requirements.md Section 11 누락 2행(jin v2 보완, 버그수정) 추가. requirements_delta_jin.md 삭제 완료. changelog.md, audit.md 기록 완료."
+**Context**: requirements_delta_jin.md 전량 검증 후 삭제, requirements.md 버전이력 보완
 
 ---
