@@ -1,5 +1,13 @@
 # AI-DLC Audit Log
 
+## Requirements 파일 구조 재편
+**Timestamp**: 2026-05-18T00:00:00Z
+**User Input**: "지금 requirements.md는 전체가 아니고 v1의 상태로 알고 있어. 이 부분을 다시 한번 확인해보고 전체요구사항이 아니면 파일이름을 requirements_delta_v1.md로 변경하고, 전체 요구사항파일(requirements.md)을 새로 생성해줘. 또, requirements_v2.md도 requirements_delta_v2.md로 이름을 변경해줘."
+**AI Response**: requirements.md → requirements_delta_v1.md, requirements_v2.md → requirements_delta_v2.md 로 git mv 처리. v1+v2+changelog 내용을 통합한 requirements.md 신규 생성.
+**Context**: BROWNFIELD - Requirements 파일 구조 재편 및 통합 전체 요구사항 파일 생성
+
+---
+
 ## Workspace Detection
 **Timestamp**: 2026-05-15T00:00:00Z
 **User Input**: "항공사에서 revenue management 를 하기 위한 가격관리 프로그램을 만들어줘. 요구사항 구체화를 위해 모호한 부분이 있으면 역질문해줘"

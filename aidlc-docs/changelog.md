@@ -52,3 +52,12 @@
   - 헤더에 클래스명 한글 표기 추가 (예: F (일등석))
 
 ---
+
+## 2026-05-18
+
+### Requirements 파일 구조 재편
+- `aidlc-docs/inception/requirements/requirements.md` → `requirements_delta_v1.md` (이름 변경, git mv)
+- `aidlc-docs/inception/requirements/requirements_v2.md` → `requirements_delta_v2.md` (이름 변경, git mv)
+- `aidlc-docs/inception/requirements/requirements.md` 신규 생성 — v1 + v2 + changelog 반영 통합 전체 요구사항 파일
+
+---
