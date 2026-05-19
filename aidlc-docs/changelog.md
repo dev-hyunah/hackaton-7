@@ -4,6 +4,135 @@
 
 ---
 
+## 2026-05-19 — 기내 좌석 배치도 좌석 크기·간격 확대 및 특가 구역 전체 표시
+
+**파일**: `frontend/src/components/FareManagement.tsx`
+
+### 변경 전
+- 좌석 크기: 프레스티지 22×18px, 이코노미 17×14px
+- 좌석/행 간격: 2px
+- `maxHeight: 400`으로 특가(V) 구역 일부 잘림
+
+### 변경 후
+- 좌석 크기: 프레스티지 **32×26px**, 이코노미 **24×20px** (약 40% 확대)
+- 좌석 간격 gap: 2→**4px**, 통로 폭: 8/10→**12/16px**, 행 간격: `space-y-0.5`→`space-y-1`
+- 카드 패딩: `px-3 pt-5 pb-4`→**`px-4 pt-6 pb-5`**
+- `maxHeight` 제한 완전 제거 → 모든 등급 구역 전체 표시 (스크롤 없음)
+- 열 헤더 폰트: `text-[7px]`→**`text-[9px]`**
+
+---
+
+## 2026-05-19 — 기내 좌석 배치도 세로형 복원 및 레이아웃 원복
+
+**파일**: `frontend/src/components/FareManagement.tsx`
+
+### 변경 전
+- SeatMap이 가로형으로 변경된 상태
+- 좌석 등급별 운임 관리와 SeatMap 배치 혼재
+
+### 변경 후
+- **세로형 SeatMap** 복원: 기수(▲) → PRESTIGE 2+2 → ECONOMY 3+3 연속 구역
+- **레이아웃**: `col-span-12 lg:col-span-8` (좌) + `col-span-12 lg:col-span-4` (우)
+- **좌측 상단**: 좌석 등급별 운임 관리 (ClassEditCard 목록)
+- **좌측 하단**: 기내 좌석 배치도 (SeatMap)
+- **우측**: Profit Analysis + AI 전략 분석
+
+---
+
+## 2026-05-19 — 기내 좌석 배치도 항공사 실제 화면 기준 재설계
+
+**파일**: `frontend/src/components/FareManagement.tsx`
+
+### 변경 전
+- 단순 격자형 좌석 표시, 고정 위치 tooltip (fixed position)
+
+### 변경 후
+- **세로형 레이아웃**: 기수(▲) → PRESTIGE 2+2 → 점선 ECONOMY 구분 → Y/M/V 연속 3+3 배치
+- **SeatBtn 색상**: 프레스티지=amber, 정상=blue, 할인=teal, 특가=violet / 판매석(짙은색) vs 여석(연한색)
+- **Tooltip**: `position: absolute`, `bottom: calc(100% + 5px)` — 해당 좌석 바로 위 표시
+- **RowLine**: 행번호 + 좌측 좌석 + 통로 + 우측 좌석
+- **ColLabels**: A B C / D E F 열 헤더
+- **우측 legend**: 등급별 색상 샘플 + LF 진행 바 + 잔여석/전체석 표시
+
+---
+
+## 2026-05-19 — EMSRb 알고리즘 기반 좌석 배분 구현 + 코드 배지 미표출
+
+**파일**: `frontend/src/data/mockData.ts`, `frontend/src/components/FareManagement.tsx`
+
+### 변경 전
+- `buildDashboardFlights`: 고정 비율(`cfg.y`, `cfg.m`, `cfg.v`)로 좌석 수 결정
+- `aiReallocateSeats`: 기회비용/수익기여 greedy 방식으로 좌석 재배분
+- ClassEditCard: 우측 상단에 클래스 코드(C/Y/M/V) 배지 표시
+
+### 변경 후
+#### `frontend/src/data/mockData.ts`
+- `_normInv()`: Abramowitz & Stegun 26.2.17 유리 근사식 기반 역정규분포 함수 추가
+- `EMSRbInput` 인터페이스 export
+- `emsrb(classes, totalSeats)` 함수 export:
+  - 입력: 운임 내림차순 정렬 EMSRbInput 배열
+  - Protection level: `y_k = μ_agg + σ_agg × normInv(1 − p_{k+1}/virtualFare_agg)`
+  - 버킷 변환, minSeats 보장, 합계=totalSeats 정합성 보정
+- `buildDashboardFlights()`:
+  - Y/M/V 좌석 수 → EMSRb 산출값으로 교체
+  - `ecoDemand = (lf/100) × total × 0.92`, 수요 분담: Y=20%, M=48%, V=32%
+  - CV 가변: LF≥80→0.20, ≥60→0.25, <60→0.40
+
+#### `frontend/src/components/FareManagement.tsx`
+- `aiReallocateSeats()`: EMSRb 기반 재배분으로 전면 교체
+  - pool = totalSeats − (프레스티지 + Closed + target 등급 신규 좌석수)
+  - eligible 등급에만 EMSRb 결과 적용
+  - Sold Out/Open 상태 자동 재계산
+- `console.group` 로그: 방향별 이유 문장 + LF·CV·pool 분석 + `console.table` 등급별 결과
+- `ClassEditCard`: 클래스 코드 배지(`w-8 h-8 rounded-lg` div) 삭제, 등급명만 표시
+
+---
+
+## 2026-05-19 — AI 전략 분석 실제 Claude API 기반 등급별 운임 추천 구현
+
+**파일**: `ai_engine/claude_ai_engine.py`, `ai_engine/mock_ai_engine.py`, `backend/app/schemas/schemas.py`, `backend/app/services/ai_recommendation_service.py`, `backend/app/routers/ai_recommendation.py`, `frontend/src/components/FareManagement.tsx`
+
+### 변경 전
+- `analyze_strategy`가 단일 `price_factor`만 반환 (전체 운임 일괄 조정)
+- 프론트에서 클래스 데이터를 백엔드에 전달하지 않음
+- 팝업에 단일 권고 운임 하나만 표시
+
+### 변경 후
+- **모델**: `claude-sonnet-4-6` 사용
+- **시스템 프롬프트**: RM 전문가 역할 정의, 등급별 조정 원칙, BR-03 규칙, 출력 스키마 명시
+- **컨텍스트 강화**: 요청 시 선택 항공편의 전체 클래스 정보(코드·이름·좌석수·판매석·현재운임·상태) 전달
+- **응답 구조**: `class_adjustments` 배열 — 등급별 권고가 + 이유 반환
+- **BR-03 적용**: 현재 운임 ±30% 초과 추천 자동 클램핑
+- **Mock fallback**: 동일 구조로 이슈 키워드 기반 등급 차별화 추천
+- **UI**: 팝업에 등급별 추천가 테이블 (현재가 → 권고가, 변동률, 이유) 표시
+- **적용**: "전략 승인 및 전체 적용" 클릭 시 등급별 추천가가 각 클래스에 반영
+
+---
+
+## 2026-05-19 — Closed 등급 좌석 수 변경 차단 버그 수정
+
+**파일**: `frontend/src/components/FareManagement.tsx`
+
+### 문제
+- Closed 등급의 좌석 수가 다른 등급 좌석 수 변경 시 함께 변동됨
+- 좌석 이관 시 Closed 등급이 자동으로 Open 상태로 전환됨
+- Closed 등급의 좌석 수 직접 편집이 UI에서 차단되지 않음
+
+### 수정
+1. **`aiReallocateSeats` 함수**
+   - `target.status === "Closed"` 조기 반환 추가 — 직접 편집 시 즉시 차단
+   - `others` 필터에 `c.status !== "Closed"` 조건 추가 — 차감/이관 후보에서 Closed 제외
+   - 이관받는 등급의 `status = "Open"` 자동 전환 코드 제거
+
+2. **`commitEdit` 함수**
+   - `targetCls.status === "Closed"` 방어 조건 추가
+
+3. **`ClassEditCard` 컴포넌트**
+   - `seatsLocked`: `isPrestige` → `isPrestige || isClosed`
+   - 툴팁 메시지: 프레스티지/Closed 각각 별도 문구 표시
+
+---
+
 ## 2026-05-18 (실제 대한항공 국내선 항공편 표출)
 
 ### 기능 구현: B737-900 고정 편성 → 실제 대한항공 국내선 스케줄 전면 반영

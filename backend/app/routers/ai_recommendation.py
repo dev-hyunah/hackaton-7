@@ -40,4 +40,7 @@ def reject_recommendation(recommendation_id: str, body: RejectionRequest, db: Se
 @router.post("/strategy", response_model=StrategyAnalysisSchema)
 def request_strategy(body: StrategyAnalysisRequest, db: Session = Depends(get_db)):
     service = AiRecommendationService(db)
-    return service.request_strategy_analysis(body.issue_text, body.route, body.flight_id)
+    return service.request_strategy_analysis(
+        body.issue_text, body.route, body.flight_id, body.classes or [],
+        force_relevant=body.force_relevant,
+    )

@@ -1,5 +1,104 @@
 # AI-DLC Audit Log
 
+## AI 전략 분석 — 실제 Claude API 기반 등급별 운임 추천 구현
+
+**Timestamp**: 2026-05-19T08:50:00Z
+**User Input**: "'AI 전략 분석 요청' 기능이 입력된 자연어를 분석해서 알맞은 가격 변동 추천을 해줘야 해(현재는 mocking된 데이터). 적절한 AI 모델을 사용해서 가격 변동을 추천해줄 수 있도록 수정해줘."
+**AI Response**: 백엔드 5개 파일 + 프론트엔드 1개 파일 수정. claude-sonnet-4-6 모델 사용, 등급별 추천가 반환 구조 구축.
+**Context**: 기능 개선 — 자연어 이슈를 Claude API로 분석하여 좌석 등급별 차별화된 운임 추천
+
+**수정 내용**:
+1. `ai_engine/claude_ai_engine.py` — 시스템 프롬프트 전면 재작성. 등급별 현황(코드·이름·판매석·좌석수·현재운임·상태)을 컨텍스트로 전달. `class_adjustments` 배열 형태로 반환. BR-03(±30%) 클램핑 적용. `claude-sonnet-4-6` 모델 사용.
+2. `ai_engine/mock_ai_engine.py` — fallback도 동일 `class_adjustments` 구조 반환. 이슈 키워드(수요 급증/위축/안정)별 등급 차별화 factor_map 적용.
+3. `backend/app/schemas/schemas.py` — `ClassContext`, `ClassAdjustment` 모델 추가. `StrategyAnalysisRequest`에 `classes` 필드 추가. `StrategyAnalysisSchema`에 `class_adjustments` 필드 추가.
+4. `backend/app/services/ai_recommendation_service.py` — `request_strategy_analysis`에 `classes` 파라미터 추가. Claude 응답의 `class_adjustments`를 `ClassAdjustment` 객체로 매핑.
+5. `backend/app/routers/ai_recommendation.py` — `body.classes` 서비스로 전달.
+6. `frontend/src/components/FareManagement.tsx` — 요청 payload에 선택 항공편의 classes 포함. `aiPopup` 타입에 `classAdjustments` 추가. 팝업 UI에 등급별 추천가 테이블(현재가·권고가·변동률·이유) 추가. `applyAiPopup`이 classAdjustments 기반으로 가격 적용.
+
+---
+
+## Closed 등급 좌석 수 변경 차단 버그 수정
+
+**Timestamp**: 2026-05-19T00:00:00Z
+**User Input**: "Closed 처리 된 부분은 다른 등급이나 해당 등급의 좌석 수를 수정할 때 좌석 수가 변동되지 않아야 하고, open 처리도 되지 않아야 하는 부분 수정해주고 기록으로 남겨줘."
+**AI Response**: FareManagement.tsx 3곳 수정 (aiReallocateSeats 함수, commitEdit 방어 코드, ClassEditCard seatsLocked 조건)
+**Context**: 버그 수정 — Closed 등급이 좌석 재배분 대상에 포함되고 자동 Open 전환되는 문제
+
+**수정 내용**:
+1. `aiReallocateSeats` — Closed 등급을 candidates(차감 후보) 및 recipients(이관 후보)에서 제외. 이관받는 등급에 대한 자동 `status = "Open"` 전환 코드 제거.
+2. `commitEdit` — `targetCls.status === "Closed"` 조건 추가하여 Closed 등급의 좌석 수 직접 편집 차단.
+3. `ClassEditCard.seatsLocked` — `isPrestige || isClosed`로 변경하여 Closed 상태 UI 잠금 및 툴팁 메시지 분리.
+
+---
+
+## [jin] EMSRb 알고리즘 기반 좌석 배분 구현
+
+**Timestamp**: 2026-05-19T10:00:00Z
+**User Input**: "좌석 수가 처음에 정해질 때와 수정이 될 때마다 이 로직을 따라야 할 것 같아."
+**AI Response**: mockData.ts에 `_normInv`, `EMSRbInput`, `emsrb()` 추가. buildDashboardFlights Y/M/V 좌석 배분을 EMSRb로 교체. aiReallocateSeats 내부 로직을 EMSRb 호출로 전면 교체.
+**Context**: 기능 구현 — 초기 좌석 생성 및 수동 수정 시 모두 EMSRb 알고리즘 적용
+
+**수정 내용**:
+1. `frontend/src/data/mockData.ts`
+   - `_normInv()`: A&S 26.2.17 유리 근사식 기반 역정규분포 함수 추가
+   - `EMSRbInput` 인터페이스 export (code, price, meanDemand, stdDemand, minSeats)
+   - `emsrb()` 함수 export: protection level 산정 → booking limits → 버킷 좌석 변환, minSeats 강제, 합계 보정
+   - `buildDashboardFlights()`: Y/M/V 좌석 수를 EMSRb로 계산 (CV: LF≥80→0.20, ≥60→0.25, <60→0.40)
+2. `frontend/src/components/FareManagement.tsx`
+   - `aiReallocateSeats()`: 기존 greedy 로직 제거, EMSRb 호출로 교체
+   - `console.group` 상세 로그: 방향별 이유 문장, LF·CV·pool 분석 설명, `console.table` 등급별 배분 결과
+
+---
+
+## [jin] 좌석 등급 코드(C/Y/M/V) UI 미표출
+
+**Timestamp**: 2026-05-19T10:30:00Z
+**User Input**: "log에 이유에 대한 설명도 문장으로 정리해서 해줘. 그리고 좌석 등급별 운임관리에 코드(c,y,m,v)는 미표출해줘."
+**AI Response**: ClassEditCard에서 클래스 코드 배지 제거. console.group 로그에 이유 설명 문장 추가.
+**Context**: UI 개선 — 등급 코드 숨김, 로그 가독성 향상
+
+**수정 내용**:
+1. `frontend/src/components/FareManagement.tsx` > `ClassEditCard`
+   - `w-8 h-8 rounded-lg` 클래스 코드 배지 div 삭제
+   - 등급명(프레스티지, 일반석 정상 등)만 표시
+
+---
+
+## [jin] 기내 좌석 배치도 항공사 실제 화면 기준 재설계
+
+**Timestamp**: 2026-05-19T11:00:00Z
+**User Input**: "항공사이트 국내선 좌석 선택 화면을 참고해서 좌석 이미지를 다시 생성해주고, 일반석이 정상/할인/특가 영역으로 나눠져 있는데 하나의 영역에 색상만 다르도록 해서 표현해줘. 색상에 대한 label은 오른쪽에 따로 만들어주, 마우스 hover 되었을 때 나오는 말풍선은 해당 좌석에 보이도록 해줘."
+**AI Response**: SeatMap 컴포넌트 전면 재작성. SeatBtn에 position:absolute 기반 툴팁. 세로형 레이아웃 (기수→PRESTIGE 2+2→ECONOMY 3+3 연속). 우측 legend.
+**Context**: UI 재설계 — 실제 항공사 좌석 선택 화면 기준 세로형 기내 배치도
+
+---
+
+## [jin] 기내 배치도 레이아웃 원복 및 좌석 등급별 운임 관리 상단 배치
+
+**Timestamp**: 2026-05-19T11:30:00Z
+**User Input**: "기내 좌석 배치도가 가로형인 것이 이상해. 기존에 세로형으로 다시 바꿔주고, 전체적인 배치도 기존대로 다시 바꿔주고, 좌석 등급별 운임 관리를 위에 배치해줘."
+**AI Response**: SeatMap을 세로형으로 복원. 레이아웃 좌측 8/12 + 우측 4/12로 원복. 좌측 상단: 좌석 등급별 운임 관리, 하단: SeatMap.
+**Context**: UI 원복 — 가로형 좌석 배치도를 세로형으로 재변경, 레이아웃 복원
+
+---
+
+## [jin] 기내 좌석 배치도 좌석 크기·간격 확대 및 특가 구역 전체 표시
+
+**Timestamp**: 2026-05-19T12:00:00Z
+**User Input**: "기내 좌석 배치도에 seatmap부분에 좌석별 간격과 가로 길이를 넓혀서 카드 영역에 적절한 크기로 배치되게 수정해주고, 현재 특가 부분이 짧리는데 하단 영역으로 전체가 나오도록 해줘."
+**AI Response**: 좌석 크기 확대(프레스티지 32×26, 이코노미 24×20), gap 2→4px, 통로 폭 확대, maxHeight:400 제한 제거, 패딩 확대.
+**Context**: UI 개선 — 좌석 표시 크기와 간격 확대, 특가 구역 잘림 해결
+
+**수정 내용**:
+1. `frontend/src/components/FareManagement.tsx`
+   - `SeatBtn`: 프레스티지 22×18 → 32×26px, 이코노미 17×14 → 24×20px
+   - `RowLine`: gap 2→4px, 통로 폭 8/10→12/16px
+   - `ColLabels`: gap 2→4px, 폰트 `text-[7px]`→`text-[9px]`
+   - `SeatMap` 내 `space-y-0.5`→`space-y-1` (행 간격), 컨테이너 패딩 확대
+   - `maxHeight: 400` 제거 → 전체 구역 스크롤 없이 표시
+
+---
+
 ## 실제 대한항공 국내선 항공편 표출 구현
 
 **Timestamp**: 2026-05-18T09:00:00Z

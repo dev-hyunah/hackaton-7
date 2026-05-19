@@ -3,31 +3,21 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from "recharts";
-import { FileText, Download, Mail, TrendingUp, Target, Award, RefreshCw } from "lucide-react";
+import { FileText, Download, TrendingUp, Target, Award, RefreshCw } from "lucide-react";
 import { useReportStore } from "../stores/reportStore";
 import { KE_DOMESTIC_ROUTES } from "../data/mockData";
 
 export default function Report() {
   const {
-    reportData, reportStatus, emailInput,
-    setEmailInput, generateReport, downloadPdf, downloadDocx, sendEmail,
+    reportData, reportStatus,
+    generateReport, downloadPdf,
   } = useReportStore();
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState("2026-05-01");
   const [periodEnd, setPeriodEnd] = useState("2026-05-31");
-  const [emailSent, setEmailSent] = useState(false);
 
   const handleGenerate = () => {
     generateReport(selectedRoute, periodStart, periodEnd);
-  };
-
-  const handleEmail = async () => {
-    if (!reportData || !emailInput.trim()) return;
-    const ok = await sendEmail(reportData.reportId, emailInput);
-    if (ok) {
-      setEmailSent(true);
-      setTimeout(() => setEmailSent(false), 3000);
-    }
   };
 
   return (
@@ -95,35 +85,6 @@ export default function Report() {
             >
               <Download size={15} />PDF 다운로드
             </button>
-            <button
-              data-testid="download-docx-btn"
-              onClick={() => downloadDocx(reportData.reportId)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:border-blue-300 transition-colors"
-            >
-              <Download size={15} />DOCX 다운로드
-            </button>
-            <div className="flex items-center gap-2 ml-auto">
-              <input
-                data-testid="email-input"
-                type="email" value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="이메일 주소"
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-              />
-              <button
-                data-testid="send-email-btn"
-                onClick={handleEmail}
-                disabled={!emailInput.trim()}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all disabled:opacity-40 ${
-                  emailSent
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-600"
-                    : "bg-white border-gray-200 text-gray-600 hover:border-emerald-300"
-                }`}
-              >
-                <Mail size={15} />
-                {emailSent ? "전송 완료 ✓" : "이메일 전송"}
-              </button>
-            </div>
           </div>
 
           {/* Report preview */}

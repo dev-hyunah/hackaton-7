@@ -355,10 +355,11 @@ const ROUTE_SCHEDULES: Record<string, RouteSchedule[]> = {
   ],
 };
 
+// 노선별 일반석 정상(Y) 기준 운임 — 실제 대한항공 국내선 평균 비성수기 평일 기준
 const ROUTE_BASE_PRICE: Record<string, number> = {
-  "GMP-CJU": 98000, "ICN-CJU": 105000, "GMP-PUS": 82000,
-  "GMP-CJJ": 78000, "GMP-TAE": 75000,  "GMP-KWJ": 70000,
-  "ICN-PUS": 80000, "GMP-KPO": 72000,  "GMP-RSU": 68000,
+  "GMP-CJU": 115000, "ICN-CJU": 120000, "GMP-PUS": 95000,
+  "GMP-CJJ": 88000,  "GMP-TAE": 85000,  "GMP-KWJ": 90000,
+  "ICN-PUS": 92000,  "GMP-KPO": 88000,  "GMP-RSU": 84000,
 };
 
 const ROUTE_BASE_COST: Record<string, number> = {
@@ -367,40 +368,247 @@ const ROUTE_BASE_COST: Record<string, number> = {
   "ICN-PUS": 9800000,  "GMP-KPO": 8800000,  "GMP-RSU": 8200000,
 };
 
-// 편 상태 및 LF/pace 패턴 (시간대 + 인덱스 기반 결정론적 생성)
-function flightPattern(idx: number, timeSlot: string): { lf: number; pace: string; status: DashboardFlight["status"] } {
-  const patterns = [
-    { lf: 88, pace: "+12%", status: "수요 급증"  as const },
-    { lf: 62, pace: "+2%",  status: "안정적"    as const },
-    { lf: 45, pace: "-5%",  status: "수요 저조" as const },
-    { lf: 94, pace: "+20%", status: "매진임박"  as const },
-    { lf: 73, pace: "+5%",  status: "안정적"    as const },
-    { lf: 55, pace: "-3%",  status: "수요 저조" as const },
-    { lf: 81, pace: "+8%",  status: "수요 급증" as const },
-  ];
-  const base = patterns[idx % patterns.length];
-  // 아침·저녁 시간대 LF 소폭 가중
-  const lfBoost = (timeSlot === "아침" || timeSlot === "저녁") ? 5 : 0;
-  return { ...base, lf: Math.min(99, base.lf + lfBoost) };
+// ── EMSRb (Expected Marginal Seat Revenue-b) ────────────────────────────────
+
+// A&S 26.2.17 rational approximation for inverse normal CDF — |err| < 4.5e-4
+function _normInv(p: number): number {
+  if (p <= 0) return -8; if (p >= 1) return 8;
+  const a = [2.515517, 0.802853, 0.010328];
+  const b = [1.432788, 0.189269, 0.001308];
+  const sign = p < 0.5 ? -1 : 1;
+  const q = p < 0.5 ? p : 1 - p;
+  const t = Math.sqrt(-2 * Math.log(q));
+  const num = a[0] + t * (a[1] + t * a[2]);
+  const den = 1 + t * (b[0] + t * (b[1] + t * b[2]));
+  return sign * (t - num / den);
 }
 
-export function buildDashboardFlights(route: string): DashboardFlight[] {
+export interface EMSRbInput {
+  code: string;
+  price: number;       // 운임 (내림차순 전달 필수)
+  meanDemand: number;  // μ
+  stdDemand: number;   // σ
+  minSeats: number;    // 최소 보장 좌석 (= sold)
+}
+
+/**
+ * EMSRb: 각 등급 protection level 계산 후 좌석 버킷 반환.
+ * classes는 price 내림차순으로 전달해야 함.
+ * 반환 배열 길이 = classes.length, 합계 = totalSeats 보장.
+ */
+export function emsrb(classes: EMSRbInput[], totalSeats: number): number[] {
+  const n = classes.length;
+  if (n === 0) return [];
+  if (n === 1) return [Math.max(totalSeats, classes[0].minSeats)];
+
+  // protection levels y[k]: 상위 k+1 등급을 합쳐서 보호할 좌석 수
+  const y: number[] = new Array(n - 1);
+  let aggMean = 0, aggVar = 0, aggRevenue = 0, aggCount = 0;
+
+  for (let k = 0; k < n - 1; k++) {
+    const c = classes[k];
+    aggMean    += c.meanDemand;
+    aggVar     += c.stdDemand * c.stdDemand;
+    aggRevenue += c.price * c.meanDemand;
+    aggCount   += c.meanDemand;
+    const aggStd      = Math.sqrt(aggVar);
+    const virtualFare = aggCount > 0 ? aggRevenue / aggCount : c.price;
+    const nextFare    = classes[k + 1].price;
+    // P(revenue ≥ nextFare) → normInv(1 − nextFare/virtualFare)
+    const ratio = Math.min(Math.max(nextFare / virtualFare, 0.001), 0.999);
+    y[k] = Math.round(aggMean + aggStd * _normInv(1 - ratio));
+    y[k] = Math.max(0, Math.min(y[k], totalSeats));
+  }
+
+  // 버킷 변환: bucket[0] = y[0], bucket[k] = y[k]-y[k-1], bucket[n-1] = total-y[n-2]
+  const buckets: number[] = new Array(n);
+  buckets[0] = y[0];
+  for (let k = 1; k < n - 1; k++) buckets[k] = Math.max(0, y[k] - y[k - 1]);
+  buckets[n - 1] = Math.max(0, totalSeats - y[n - 2]);
+
+  // minSeats 강제: 부족 시 낮은 등급부터 차감
+  for (let k = 0; k < n; k++) {
+    if (buckets[k] < classes[k].minSeats) {
+      const deficit = classes[k].minSeats - buckets[k];
+      buckets[k] = classes[k].minSeats;
+      // 낮은 등급(k+1 이후)에서 차감
+      let rem = deficit;
+      for (let j = n - 1; j > k && rem > 0; j--) {
+        const take = Math.min(rem, Math.max(0, buckets[j] - classes[j].minSeats));
+        buckets[j] -= take; rem -= take;
+      }
+    }
+  }
+
+  // 합계 보정: 마지막 등급에서 보정 (minSeats 이상 유지)
+  const total = buckets.reduce((s, v) => s + v, 0);
+  const diff  = totalSeats - total;
+  buckets[n - 1] = Math.max(classes[n - 1].minSeats, buckets[n - 1] + diff);
+
+  return buckets;
+}
+
+// ── 운임 배수 계산 ──────────────────────────────────────────────────────────
+
+// 성수기 판단: 여름(7~8월), 겨울연말(12~1월), 설/추석 전후
+function peakSeasonMultiplier(dateStr: string): number {
+  const d = new Date(dateStr);
+  const month = d.getMonth() + 1;
+  const mmdd = dateStr.slice(5); // "MM-DD"
+
+  // 설날 전후 (보통 1월 말~2월 초, 고정 근사)
+  const seollal = ["01-27","01-28","01-29","01-30","01-31","02-01","02-02","02-03"];
+  // 추석 전후 (9월 말~10월 초, 고정 근사)
+  const chuseok = ["09-28","09-29","09-30","10-01","10-02","10-03","10-04","10-05"];
+
+  if (seollal.includes(mmdd) || chuseok.includes(mmdd)) return 1.40;
+  if (month === 7 || month === 8) return 1.30;   // 여름 성수기
+  if (month === 12 || month === 1) return 1.18;  // 겨울 연말연초
+  if (month === 5 || month === 10) return 1.05;  // 소성수기 (황금연휴·단풍)
+  return 1.0; // 비수기 (봄·가을 평시)
+}
+
+// 요일 배수: 금·토·일 주말 수요 높음
+function dowMultiplier(dateStr: string): number {
+  const dow = new Date(dateStr).getDay(); // 0=일, 5=금, 6=토
+  if (dow === 5 || dow === 6) return 1.22; // 금·토
+  if (dow === 0)              return 1.18; // 일
+  if (dow === 1)              return 0.95; // 월 (귀경 후 저조)
+  return 1.0;                              // 화~목 평일
+}
+
+// 시간대 배수
+function timeSlotMultiplier(slot: string): number {
+  if (slot === "아침") return 1.15; // 첫편 수요 높음
+  if (slot === "저녁") return 1.12; // 막편 수요 높음
+  if (slot === "오전") return 1.00;
+  return 0.95;                       // 오후 (낮 시간대 저조)
+}
+
+// 편 상태 및 LF/pace 패턴 (날짜 + 인덱스 기반 결정론적 생성)
+function flightPattern(
+  idx: number,
+  timeSlot: string,
+  dateStr: string,
+): { lf: number; pace: string; status: DashboardFlight["status"] } {
+  const peakMul  = peakSeasonMultiplier(dateStr);
+  const dowMul   = dowMultiplier(dateStr);
+  const combined = peakMul * dowMul;
+
+  const basePatterns = [
+    { lf: 72, pace: "+8%",  status: "수요 급증"  as const },
+    { lf: 55, pace: "+2%",  status: "안정적"    as const },
+    { lf: 40, pace: "-5%",  status: "수요 저조" as const },
+    { lf: 82, pace: "+18%", status: "매진임박"  as const },
+    { lf: 65, pace: "+5%",  status: "안정적"    as const },
+    { lf: 48, pace: "-3%",  status: "수요 저조" as const },
+    { lf: 68, pace: "+6%",  status: "수요 급증" as const },
+  ];
+  const base = basePatterns[idx % basePatterns.length];
+
+  // 성수기·주말일수록 LF 높아짐
+  const lfBoost = Math.round((combined - 1.0) * 30);
+  // 아침·저녁 시간대 LF 가산
+  const slotBoost = (timeSlot === "아침" || timeSlot === "저녁") ? 8 : 0;
+  const lf = Math.min(99, base.lf + lfBoost + slotBoost);
+
+  // LF에 따라 status 재결정
+  const status: DashboardFlight["status"] =
+    lf >= 90 ? "매진임박" :
+    lf >= 78 ? "수요 급증" :
+    lf >= 60 ? "안정적" : "수요 저조";
+
+  return { lf, pace: base.pace, status };
+}
+
+// 운임을 1,000원 단위로 반올림
+const r1k = (n: number) => Math.round(n / 1000) * 1000;
+
+export function buildDashboardFlights(route: string, dateStr?: string): DashboardFlight[] {
   const schedules = ROUTE_SCHEDULES[route] ?? ROUTE_SCHEDULES["GMP-CJU"];
-  const basePrice = ROUTE_BASE_PRICE[route] ?? 85000;
+  // Y(일반석 정상) 기준 운임
+  const yBase   = ROUTE_BASE_PRICE[route] ?? 95000;
   const baseCostBase = ROUTE_BASE_COST[route] ?? 11000000;
+
+  const date = dateStr ?? new Date().toISOString().slice(0, 10);
+  const peakMul = peakSeasonMultiplier(date);
+  const dowMul  = dowMultiplier(date);
 
   return schedules.map((sched, idx) => {
     const cfg = AIRCRAFT_CONFIG[sched.aircraft];
-    const { lf, pace, status } = flightPattern(idx, sched.timeSlot);
-    const timeMul = (sched.timeSlot === "아침" || sched.timeSlot === "저녁") ? 1.12 : 0.97;
-    const base = Math.round(basePrice * timeMul);
+    const { lf, pace, status } = flightPattern(idx, sched.timeSlot, date);
+    const slotMul = timeSlotMultiplier(sched.timeSlot);
 
-    // 기종별 baseCost 보정 (대형기일수록 고정비 증가)
+    // Y 운임: 기준 × 성수기 × 요일 × 시간대 (1,000원 단위)
+    const priceY = r1k(yBase * peakMul * dowMul * slotMul);
+
+    // 등급별 운임 — 실제 대한항공 국내선 비율 기준
+    //   C(프레스티지) ≈ Y × 2.0~2.2  (성수기엔 위로)
+    //   Y(일반석 정상) = 기준
+    //   M(일반석 할인) ≈ Y × 0.68~0.72
+    //   V(일반석 특가) ≈ Y × 0.35~0.45  (성수기 품절 많음)
+    const cMul = peakMul >= 1.25 ? 2.20 : peakMul >= 1.10 ? 2.10 : 2.00;
+    const mMul = 0.70;
+    const vMul = peakMul >= 1.25 ? 0.45 : 0.38;
+
+    const priceC = r1k(priceY * cMul);
+    const priceM = r1k(priceY * mMul);
+    const priceV = r1k(priceY * vMul);
+
+    // AI 추천가 (LF 기반)
+    const hasAiRec = idx % 3 !== 1;
+    const aiMulHigh = 1.12;
+    const aiMulLow  = 0.90;
+    const aiMul = hasAiRec ? (lf >= 80 ? aiMulHigh : lf <= 55 ? aiMulLow : 1.0) : 1.0;
+
+    // 기종별 baseCost 보정
     const sizeMul = sched.aircraft === "B737-900ER" ? 1.10 : sched.aircraft === "A220-300" ? 0.88 : 1.0;
     const baseCost = Math.round(baseCostBase * sizeMul);
 
     const soldRatio = lf / 100;
-    const hasAiRec = idx % 3 !== 1; // 3편 중 2편에 AI 추천 존재
+    const cv = lf >= 80 ? 0.20 : lf >= 60 ? 0.25 : 0.40;
+
+    // 이코노미 캐빈 전체 좌석 수 (Prestige 제외)
+    const econTotal = cfg.total - cfg.c;
+    // 이코노미 수요 추정 (총 수요의 92% = Prestige 제외)
+    const ecoDemand = (lf / 100) * cfg.total * 0.92;
+
+    // sold 먼저 추정 (EMSRb minSeats 에 사용)
+    const soldC = Math.min(cfg.c, Math.round(cfg.c * Math.min(soldRatio * 1.15, 1)));
+    const soldYraw = Math.round(ecoDemand * 0.20 * soldRatio * 1.05);
+    const soldMraw = Math.round(ecoDemand * 0.48 * soldRatio);
+    const soldVraw = Math.round(ecoDemand * 0.32 * soldRatio * 0.85);
+
+    // 특가 V: LF 높거나 성수기면 Closed 처리
+    const vClosed = lf >= 82 || peakMul >= 1.25;
+
+    // EMSRb 입력 (price 내림차순): V가 Closed면 pool에서 제외, Y/M만 분배
+    const econInputs: EMSRbInput[] = vClosed
+      ? [
+          { code: "Y", price: priceY, meanDemand: ecoDemand * 0.20, stdDemand: ecoDemand * 0.20 * cv, minSeats: Math.max(0, soldYraw) },
+          { code: "M", price: priceM, meanDemand: ecoDemand * 0.48, stdDemand: ecoDemand * 0.48 * cv, minSeats: Math.max(0, soldMraw) },
+        ]
+      : [
+          { code: "Y", price: priceY, meanDemand: ecoDemand * 0.20, stdDemand: ecoDemand * 0.20 * cv, minSeats: Math.max(0, soldYraw) },
+          { code: "M", price: priceM, meanDemand: ecoDemand * 0.48, stdDemand: ecoDemand * 0.48 * cv, minSeats: Math.max(0, soldMraw) },
+          { code: "V", price: priceV, meanDemand: ecoDemand * 0.32, stdDemand: ecoDemand * 0.32 * cv, minSeats: Math.max(0, soldVraw) },
+        ];
+
+    const vReservedSeats = vClosed ? cfg.v : 0; // Closed면 cfg.v 고정
+    const emsrbPool = econTotal - vReservedSeats;
+    const econBuckets = emsrb(econInputs, emsrbPool);
+
+    const seatsY = econBuckets[0];
+    const seatsM = econBuckets[1];
+    const seatsV = vClosed ? cfg.v : econBuckets[2];
+
+    const soldY = Math.min(seatsY, soldYraw);
+    const soldM = Math.min(seatsM, soldMraw);
+    const soldV = Math.min(seatsV, soldVraw);
+
+    const vStatus: DashboardClassStatus =
+      vClosed ? "Closed" :
+      soldV >= seatsV ? "Sold Out" : "Open";
 
     return {
       id: sched.flightNo,
@@ -411,40 +619,40 @@ export function buildDashboardFlights(route: string): DashboardFlight[] {
       pace,
       aircraft: sched.aircraft,
       totalSeats: cfg.total,
-      currentPrice: base,
-      aiRecommended: hasAiRec ? Math.round(base * (lf >= 80 ? 1.12 : 0.92)) : base,
+      currentPrice: priceY,
+      aiRecommended: hasAiRec ? r1k(priceY * aiMul) : priceY,
       baseCost,
       classes: [
         {
           name: "프레스티지", code: "C", seats: cfg.c,
-          sold: Math.min(cfg.c, Math.round(cfg.c * Math.min(soldRatio * 1.1, 1))),
-          price: Math.round(base * 1.95),
-          aiPrice: hasAiRec ? Math.round(base * (lf >= 80 ? 2.18 : 1.80)) : Math.round(base * 1.95),
-          status: Math.round(cfg.c * soldRatio * 1.1) >= cfg.c ? "Sold Out" : "Open",
+          sold: soldC,
+          price: priceC,
+          aiPrice: hasAiRec ? r1k(priceC * aiMul) : priceC,
+          status: soldC >= cfg.c ? "Sold Out" as const : "Open" as const,
         },
         {
-          name: "일반석 정상", code: "Y", seats: cfg.y,
-          sold: Math.min(cfg.y, Math.round(cfg.y * soldRatio * 1.05)),
-          price: Math.round(base * 1.22),
-          aiPrice: hasAiRec ? Math.round(base * (lf >= 80 ? 1.38 : 1.10)) : Math.round(base * 1.22),
-          status: Math.round(cfg.y * soldRatio * 1.05) >= cfg.y ? "Sold Out" : "Open",
+          name: "일반석 정상", code: "Y", seats: seatsY,
+          sold: soldY,
+          price: priceY,
+          aiPrice: hasAiRec ? r1k(priceY * aiMul) : priceY,
+          status: soldY >= seatsY ? "Sold Out" as const : "Open" as const,
         },
         {
-          name: "일반석 할인", code: "M", seats: cfg.m,
-          sold: Math.min(cfg.m, Math.round(cfg.m * soldRatio)),
-          price: Math.round(base * 0.94),
-          aiPrice: hasAiRec ? Math.round(base * (lf >= 80 ? 1.05 : 0.85)) : Math.round(base * 0.94),
-          status: "Open",
+          name: "일반석 할인", code: "M", seats: seatsM,
+          sold: soldM,
+          price: priceM,
+          aiPrice: hasAiRec ? r1k(priceM * aiMul) : priceM,
+          status: soldM >= seatsM ? "Sold Out" as const : "Open" as const,
         },
         {
-          name: "일반석 특가", code: "V", seats: cfg.v,
-          sold: Math.min(cfg.v, Math.round(cfg.v * soldRatio * 0.9)),
-          price: Math.round(base * 0.72),
-          aiPrice: Math.round(base * 0.72),
-          status: lf >= 85 ? "Closed" : "Open",
+          name: "일반석 특가", code: "V", seats: seatsV,
+          sold: soldV,
+          price: priceV,
+          aiPrice: r1k(priceV * (lf >= 80 ? 1.05 : 0.95)),
+          status: vStatus,
         },
       ],
-      reason: lf >= 85
+      reason: lf >= 82
         ? `예약 페이스 과거 대비 빠름(LF ${lf}%). ${sched.aircraft} 운항. 상위 클래스 운임 즉시 인상 권고.`
         : lf <= 55
         ? `예약 유입 저조(LF ${lf}%). ${sched.aircraft} 운항. 하위 클래스 공급 확대 및 할인 운임 인하 필요.`

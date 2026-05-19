@@ -194,10 +194,29 @@ class DashboardSummarySchema(BaseModel):
     pending_recommendations: int
 
 
+class ClassContext(BaseModel):
+    code: str
+    name: str
+    seats: int
+    sold: int
+    price: int
+    status: str
+
+
 class StrategyAnalysisRequest(BaseModel):
     issue_text: str
     route: str
     flight_id: str
+    classes: list[ClassContext] = []
+    force_relevant: bool = False
+
+
+class ClassAdjustment(BaseModel):
+    code: str
+    name: str
+    current_price: int
+    recommended_price: int
+    reason: str
 
 
 class StrategyAnalysisSchema(BaseModel):
@@ -205,6 +224,8 @@ class StrategyAnalysisSchema(BaseModel):
     description: str
     flight_id: str
     recommended_price: int
+    irrelevant: bool = False
+    class_adjustments: list[ClassAdjustment] = []
     created_at: str
 
 

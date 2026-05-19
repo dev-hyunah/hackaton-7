@@ -13,7 +13,11 @@
       "Bash(npm run *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5174/)",
       "Bash(open *)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(xargs kill -9)",
+      "Bash(PYTHONPATH=/Users/jhan/Desktop/hackaton-7 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Read(//private/tmp/**)"
     ]
   }
 }
