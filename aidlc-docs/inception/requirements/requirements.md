@@ -3,7 +3,7 @@
 
 > **관리 정책**: 이 파일은 항상 최신 전체 요구사항을 반영합니다.
 > 변경 시 해당 delta 파일(`requirements_delta_vN.md`)을 먼저 작성하고 이 파일에 통합하세요.
-> 마지막 통합 기준: **v1 + v2 + changelog + v3 + jin v1~v2 (좌석 로직 개편) + jin v2 보완 (Closed 운임 잠금) + 버그수정 (Sold Out→Open 복구, 2026-05-18)**
+> 마지막 통합 기준: **v1 + v2 + changelog + v3 + jin v1~v2 (좌석 로직 개편) + jin v2 보완 (Closed 운임 잠금) + 버그수정 (Sold Out→Open 복구, 2026-05-18) + v4 (Step1/2 화면 전환, 좌석 배치도, EMSRb·Dynamic Pricing, 2026-05-19)**
 
 ---
 
@@ -31,6 +31,9 @@
 ## 3. 기능 요구사항 (Functional Requirements)
 
 ### FR-01: 운임 관리 (Fare Management)
+- **운항현황(Step 1) → 세부현황(Step 2) 화면 전환**: 운항현황 테이블에서 특정 항공편 클릭 시 세부현황 화면으로 전환
+- **세부현황(Step 2) 기내 좌석 배치도**: 항공편 좌석 배치에 맞는 인터렉티브 기내 좌석 배치도 표시 — 클래스별 색상(프레스티지=amber, 정상=blue, 할인=cyan, 특가=slate)으로 예약현황 시각화. 행번호·열레이블·통로 포함. 마우스 호버 시 좌석 정보 표시.
+- **세부현황(Step 2) 기존 기능 유지**: 좌석 등급별 운임 관리(ClassEditCard) 기능은 step2에서 그대로 제공
 - 대한항공 국내선 전 노선 운임 관리 (GMP-CJU, GMP-PUS, GMP-CJJ, GMP-TAE 등 9개 노선)
 - 가격 산정 단위 구분:
   - 프레스티지(C), 일반석 정상가(Y/B/M), 일반석 할인가(S/K/L), 일반석 특가(T/V/G)
@@ -59,6 +62,14 @@
   - 감소 시: 수익 기여 최대(가격×잔여석 최대) 일반석 등급으로 이관
   - 좌석 수가 점유석과 같아지면 해당 등급 자동 Sold Out 전환
   - 차감/이관 불가 시 alert 배너 표시
+
+### FR-01-1: RM 다이나믹 프라이싱 알고리즘 (Dynamic Pricing & Inventory Control)
+- **EMSRb(Expected Marginal Seat Revenue-b) 알고리즘**: 일반석 클래스별 보호 수준(Protection Level) 및 예약 제한량(Booking Limits) 산정 — scipy.stats.norm 역누적분포함수 활용
+- **Logit WTP 구매 확률 모델**: `P(Buy|p) = exp(α - β·p) / (1 + exp(α - β·p))` — 가격 민감도 β는 DTD에 반비례
+- **프레스티지석 Pace-Based Continuous Pricing**: 잔여 좌석 수에 따른 가격 팩터 산정, 잔여 4석 이하 시 지수적 가격 상승
+- **일반석 Hybrid Up-pricing**: 특가(V) 수요 급증 시 클래스 즉시 차단 대신 M 클래스 하한선까지 가격 상향 조정
+- **통합 최적화 API**: `POST /api/rm/optimize` — DTD, 잔여 좌석, 경쟁사 가격, 검색 트래픽 비율 입력 → 클래스별 권장 운임 + 예약 한도 반환
+- **시나리오 시뮬레이션 API**: `POST /api/rm/simulate-scenario` — A(비수기 저조) / B(이벤트 수요 급증) / C(경쟁사 가격 인하) 3개 시나리오 지원
 
 ### FR-02: AI/ML 기반 가격 추천 (AI Price Recommendation)
 - ML 모델을 활용한 최적 가격 자동 계산
@@ -281,3 +292,4 @@
 | jin v2 보완 | 2026-05-18 | Closed 상태 운임 수정 잠금 (priceLocked = isClosed) | `requirements_delta_v3.md` 병합 |
 | 버그수정 | 2026-05-18 | Sold Out → Open 자동 복구 누락 수정 (aiReallocateSeats delta>0 경로) | 코드 버그 수정 |
 | v3-hyunah | 2026-05-18 | 인벤토리 실시간 통제 확정 버튼 FareTier 오류 버그 수정 요건 추가, AI 전략 분석 AI model 실제 호출 요건 명확화 | `requirements_delta_v3_hyunah.md` |
+| v4 | 2026-05-19 | 운임관리 Step1/2 화면 전환, 기내 좌석 배치도 시각화, EMSRb 알고리즘, 다이나믹 프라이싱 모듈, /api/rm/optimize·simulate-scenario 엔드포인트 | `requirements_delta_v4.md` |

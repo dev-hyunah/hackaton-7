@@ -299,3 +299,48 @@
   - 관리 정책 헤더 통합 기준에 v3-hyunah 명시
 
 ---
+
+---
+
+## 2026-05-19 (v4 구현)
+
+### 운임관리 — Step1/Step2 화면 전환 구현
+- `frontend/src/components/FareManagement.tsx`
+  - `step` state 추가 (`"list"` | `"detail"`, 초기값 `"list"`)
+  - 운항현황 테이블 row 클릭 시 `setStep("detail")` 전환
+  - 중앙 section: step 분기 렌더링
+    - `step === "list"`: 운항현황 테이블만 표시
+    - `step === "detail"`: 뒤로가기 헤더 + SeatMap + ClassEditCard 그리드
+
+### 운임관리 — 기내 좌석 배치도 (SeatMap) 신규 추가
+- `frontend/src/components/FareManagement.tsx` 하단에 `SeatMap` 컴포넌트 추가
+  - 클래스별 색상 시각화: 프레스티지=amber, 정상=blue, 할인=cyan, 특가=slate
+  - 프레스티지 2+2 레이아웃 / 일반석 3+3 레이아웃
+  - 행번호·열레이블·통로 표시
+  - 마우스 호버 시 좌석번호·클래스·예약여부 툴팁
+  - Closed 구역은 opacity-40 처리
+
+### 백엔드 — EMSRb + Dynamic Pricing 알고리즘 신규 구현
+- `backend/app/core/__init__.py` 신규 생성
+- `backend/app/core/emsr.py` 신규 생성
+  - EMSRb 알고리즘: FareClassInput(fare/mu/sigma) 입력 → Protection Level / Booking Limits 산정
+  - scipy.stats.norm.ppf 활용 (미설치 시 수치 근사 fallback)
+- `backend/app/core/pricing.py` 신규 생성
+  - `logit_buy_probability()`: Logit WTP 구매 확률 모델
+  - `prestige_dynamic_price()`: Pace-Based Continuous Pricing (잔여석 4석 이하 지수 상승)
+  - `economy_uppricing()`: 특가 수요 급증 시 M 클래스 하한 Up-pricing
+  - `recommend_prices()`: EMSRb + Dynamic Pricing 통합 추천 함수 (BR-01 클래스 가격 역전 방지 포함)
+- `backend/app/routers/rm_optimize.py` 신규 생성
+  - `POST /api/rm/optimize`: 통합 최적화 API
+  - `POST /api/rm/simulate-scenario`: A/B/C 시나리오 시뮬레이션 API
+- `backend/app/main.py` — rm_optimize 라우터 등록
+- `backend/requirements.txt` — `scipy>=1.11.0` 추가
+
+### Requirements 문서 업데이트
+- `aidlc-docs/inception/requirements/requirements.md`
+  - FR-01 Step1/2 화면 전환 및 기내 좌석 배치도 요건 추가
+  - FR-01-1 다이나믹 프라이싱 알고리즘 요건 신규 추가
+  - 버전 이력 v4 행 추가
+  - 관리 정책 헤더 v4 반영
+
+---

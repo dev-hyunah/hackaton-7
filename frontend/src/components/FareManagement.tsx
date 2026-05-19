@@ -197,6 +197,7 @@ export default function FareManagement() {
   // 확정으로 인해 AI 추천 영역만 조용히 숨기는 set (거부됨 배지 없음)
   const [confirmedClasses, setConfirmedClasses] = useState<Set<string>>(new Set());
   const [seatAlert, setSeatAlert] = useState<string | null>(null);
+  const [step, setStep] = useState<"list" | "detail">("list");
   const aiRef = useRef<HTMLTextAreaElement>(null);
   const { updateFare } = useFareStore();
   const { approveRecommendation, rejectRecommendation } = useAiRecommendationStore();
@@ -746,124 +747,150 @@ export default function FareManagement() {
         {/* ── 중앙 메인 ── */}
         <section className="col-span-12 lg:col-span-6 space-y-4">
 
-          {/* 운항 현황 테이블 */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-end flex-wrap gap-2">
-              <div>
-                <h2 className="text-base sm:text-xl font-black text-slate-800 tracking-tight">
-                  {selectedDate} 운항 현황
-                </h2>
-                <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
-                  {selectedFlight.aircraft} ({selectedFlight.totalSeats}석) · {selectedRoute}
-                </p>
+          {step === "list" ? (
+            /* ── step 1: 운항 현황 테이블 ── */
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-end flex-wrap gap-2">
+                <div>
+                  <h2 className="text-base sm:text-xl font-black text-slate-800 tracking-tight">
+                    {selectedDate} 운항 현황
+                  </h2>
+                  <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
+                    {selectedFlight.aircraft} ({selectedFlight.totalSeats}석) · {selectedRoute}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-black text-slate-400 block mb-1 uppercase">Selected</span>
+                  <span className="text-sm sm:text-lg font-black" style={{ color: BRAND }}>
+                    {selectedFlight.id} / {selectedFlight.time}
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] font-black text-slate-400 block mb-1 uppercase">Selected</span>
-                <span className="text-sm sm:text-lg font-black" style={{ color: BRAND }}>
-                  {selectedFlight.id} / {selectedFlight.time}
-                </span>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-400 border-b border-slate-100">
+                    <tr>
+                      <th className="px-4 sm:px-5 py-3">편명/시간</th>
+                      <th className="px-4 sm:px-5 py-3 text-center">L/F</th>
+                      <th className="px-4 sm:px-5 py-3 text-center">Pace</th>
+                      <th className="px-4 sm:px-5 py-3 text-blue-600">AI 추천</th>
+                      <th className="px-4 sm:px-5 py-3">상태</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {flights.map((f) => {
+                      const isSelected = f.id === selectedFlight.id;
+                      const paceUp = f.pace.startsWith("+");
+                      const aiLabel = aiSuggestionLabel(f.currentPrice, f.aiRecommended);
+                      return (
+                        <tr
+                          key={f.id}
+                          onClick={() => { setSelectedFlight(f); setStep("detail"); }}
+                          className={`cursor-pointer transition-all hover:bg-blue-50/60 ${
+                            isSelected ? "bg-blue-50/80 border-l-4 border-[#002561]" : "border-l-4 border-transparent"
+                          }`}
+                        >
+                          <td className="px-4 sm:px-5 py-3 sm:py-4">
+                            <div className="font-black text-slate-900 text-sm">{f.id}</div>
+                            <div className="text-[10px] text-slate-400 font-bold">{f.time} ({f.timeSlot})</div>
+                          </td>
+                          <td className="px-4 sm:px-5 py-3 sm:py-4">
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="w-14 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div className={`h-full ${lfBarColor(f.lf)}`} style={{ width: `${f.lf}%` }} />
+                              </div>
+                              <span className="text-[11px] font-black text-slate-600">{f.lf}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 sm:px-5 py-3 sm:py-4 text-center">
+                            <span className={`text-[11px] font-black flex items-center justify-center gap-0.5 ${paceUp ? "text-red-500" : "text-blue-500"}`}>
+                              {paceUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                              {f.pace}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-5 py-3 sm:py-4 font-black text-[12px]">
+                            <span className={aiLabel.color}>{aiLabel.text}</span>
+                          </td>
+                          <td className="px-4 sm:px-5 py-3 sm:py-4">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeClass(f.status)}`}>
+                              {f.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-[10px] uppercase font-black text-slate-400 border-b border-slate-100">
-                  <tr>
-                    <th className="px-4 sm:px-5 py-3">편명/시간</th>
-                    <th className="px-4 sm:px-5 py-3 text-center">L/F</th>
-                    <th className="px-4 sm:px-5 py-3 text-center">Pace</th>
-                    <th className="px-4 sm:px-5 py-3 text-blue-600">AI 추천</th>
-                    <th className="px-4 sm:px-5 py-3">상태</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {flights.map((f) => {
-                    const isSelected = f.id === selectedFlight.id;
-                    const paceUp = f.pace.startsWith("+");
-                    const aiLabel = aiSuggestionLabel(f.currentPrice, f.aiRecommended);
+          ) : (
+            /* ── step 2: 세부 현황 (좌석 배치도 + 등급 카드) ── */
+            <>
+              {/* 뒤로가기 + 편명 헤더 */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-3">
+                <button
+                  onClick={() => setStep("list")}
+                  className="flex items-center gap-1.5 text-slate-500 hover:text-[#002561] font-black text-sm transition-colors"
+                >
+                  <ChevronLeft size={18} /> 운항 목록
+                </button>
+                <div className="h-5 w-px bg-slate-200" />
+                <div>
+                  <span className="font-black text-slate-800 text-sm">{selectedFlight.id}</span>
+                  <span className="text-slate-400 text-xs font-bold ml-2">{selectedFlight.time} ({selectedFlight.timeSlot}) · {selectedFlight.aircraft}</span>
+                </div>
+                <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeClass(selectedFlight.status)}`}>
+                  {selectedFlight.status}
+                </span>
+              </div>
+
+              {/* 기내 좌석 배치도 */}
+              <SeatMap flight={selectedFlight} />
+
+              {/* 좌석 등급별 현황 카드 */}
+              <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                  <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm sm:text-base">
+                    <LayoutGrid size={16} style={{ color: BRAND }} />
+                    좌석 등급별 운임 관리
+                    <span className="text-xs font-bold text-slate-400 ml-1 hidden sm:inline">
+                      — {selectedFlight.id} ({selectedFlight.time})
+                    </span>
+                  </h3>
+                  <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-bold uppercase">
+                    총 {selectedFlight.totalSeats} Seats
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  {selectedFlight.classes.map((cls) => {
+                    const rejKey = `${selectedFlight.id}-${cls.code}`;
+                    const isRejected = rejectedClasses.has(rejKey);
+                    const isConfirmed = confirmedClasses.has(rejKey);
                     return (
-                      <tr
-                        key={f.id}
-                        onClick={() => setSelectedFlight(f)}
-                        className={`cursor-pointer transition-all hover:bg-blue-50/60 ${
-                          isSelected ? "bg-blue-50/80 border-l-4 border-[#002561]" : "border-l-4 border-transparent"
-                        }`}
-                      >
-                        <td className="px-4 sm:px-5 py-3 sm:py-4">
-                          <div className="font-black text-slate-900 text-sm">{f.id}</div>
-                          <div className="text-[10px] text-slate-400 font-bold">{f.time} ({f.timeSlot})</div>
-                        </td>
-                        <td className="px-4 sm:px-5 py-3 sm:py-4">
-                          <div className="flex flex-col items-center gap-1">
-                            <div className="w-14 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                              <div className={`h-full ${lfBarColor(f.lf)}`} style={{ width: `${f.lf}%` }} />
-                            </div>
-                            <span className="text-[11px] font-black text-slate-600">{f.lf}%</span>
-                          </div>
-                        </td>
-                        <td className="px-4 sm:px-5 py-3 sm:py-4 text-center">
-                          <span className={`text-[11px] font-black flex items-center justify-center gap-0.5 ${paceUp ? "text-red-500" : "text-blue-500"}`}>
-                            {paceUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                            {f.pace}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-5 py-3 sm:py-4 font-black text-[12px]">
-                          <span className={aiLabel.color}>{aiLabel.text}</span>
-                        </td>
-                        <td className="px-4 sm:px-5 py-3 sm:py-4">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusBadgeClass(f.status)}`}>
-                            {f.status}
-                          </span>
-                        </td>
-                      </tr>
+                      <ClassEditCard
+                        key={cls.code}
+                        cls={cls}
+                        flightId={selectedFlight.id}
+                        editState={editState}
+                        isRejected={isRejected}
+                        isConfirmed={isConfirmed}
+                        onStartEdit={startEdit}
+                        onCommit={commitEdit}
+                        onCancel={() => setEditState(null)}
+                        onEditChange={(v) => setEditState((e) => e ? { ...e, value: v } : null)}
+                        onToggleStatus={toggleStatus}
+                        onDetailAi={(fid, code) => {
+                          const c = selectedFlight.classes.find(c => c.code === code);
+                          if (c) setAiDetailPopup({ flightId: fid, cls: c });
+                        }}
+                      />
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* 좌석 등급별 현황 카드 */}
-          <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-              <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm sm:text-base">
-                <LayoutGrid size={16} style={{ color: BRAND }} />
-                좌석 등급별 운임 관리
-                <span className="text-xs font-bold text-slate-400 ml-1 hidden sm:inline">
-                  — {selectedFlight.id} ({selectedFlight.time})
-                </span>
-              </h3>
-              <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[9px] font-bold uppercase">
-                총 {selectedFlight.totalSeats} Seats
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              {selectedFlight.classes.map((cls) => {
-                const rejKey = `${selectedFlight.id}-${cls.code}`;
-                const isRejected = rejectedClasses.has(rejKey);
-                const isConfirmed = confirmedClasses.has(rejKey);
-                return (
-                  <ClassEditCard
-                    key={cls.code}
-                    cls={cls}
-                    flightId={selectedFlight.id}
-                    editState={editState}
-                    isRejected={isRejected}
-                    isConfirmed={isConfirmed}
-                    onStartEdit={startEdit}
-                    onCommit={commitEdit}
-                    onCancel={() => setEditState(null)}
-                    onEditChange={(v) => setEditState((e) => e ? { ...e, value: v } : null)}
-                    onToggleStatus={toggleStatus}
-                    onDetailAi={(fid, code) => {
-                      const c = selectedFlight.classes.find(c => c.code === code);
-                      if (c) setAiDetailPopup({ flightId: fid, cls: c });
-                    }}
-                  />
-                );
-              })}
-            </div>
-          </div>
+                </div>
+              </div>
+            </>
+          )}
         </section>
 
         {/* ── 우측: Profit Analysis ── */}
@@ -1104,6 +1131,171 @@ function ClassEditCard({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── 기내 좌석 배치도 ──────────────────────────────────────────────────────────
+function SeatMap({ flight }: { flight: DashboardFlight }) {
+  const [hoveredSeat, setHoveredSeat] = useState<{ cls: string; seatId: string; sold: boolean } | null>(null);
+
+  // 클래스별 색상
+  const clsColor = (name: string, sold: boolean, status: string) => {
+    const opacity = status === "Closed" ? "opacity-40" : "";
+    if (status === "Sold Out" || sold) {
+      if (name.includes("프레스티지")) return `bg-amber-500 ${opacity}`;
+      if (name.includes("정상")) return `bg-blue-600 ${opacity}`;
+      if (name.includes("할인")) return `bg-cyan-500 ${opacity}`;
+      return `bg-slate-400 ${opacity}`;
+    } else {
+      if (name.includes("프레스티지")) return `bg-amber-100 border border-amber-300 ${opacity}`;
+      if (name.includes("정상")) return `bg-blue-100 border border-blue-300 ${opacity}`;
+      if (name.includes("할인")) return `bg-cyan-100 border border-cyan-300 ${opacity}`;
+      return `bg-slate-100 border border-slate-300 ${opacity}`;
+    }
+  };
+
+  // 클래스별 좌석 그리드 생성
+  // 프레스티지: 2+2 (4열), 일반석: 3+3 (6열)
+  const buildGrid = (cls: DashboardClass) => {
+    const isPrestige = cls.name.includes("프레스티지");
+    const colsPerSide = isPrestige ? 2 : 3;
+    const totalCols = colsPerSide * 2;
+    const rows = Math.ceil(cls.seats / totalCols);
+    const grid: { sold: boolean; seatId: string; exists: boolean }[][] = [];
+    let seatNum = 0;
+    for (let r = 0; r < rows; r++) {
+      const row: { sold: boolean; seatId: string; exists: boolean }[] = [];
+      for (let c = 0; c < totalCols; c++) {
+        if (seatNum < cls.seats) {
+          const colLabel = "ABCDEF"[c];
+          row.push({ sold: seatNum < cls.sold, seatId: `${r + 1}${colLabel}`, exists: true });
+          seatNum++;
+        } else {
+          row.push({ sold: false, seatId: "", exists: false });
+        }
+      }
+      grid.push(row);
+    }
+    return { grid, colsPerSide };
+  };
+
+  return (
+    <div className="bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-black text-slate-800 text-sm flex items-center gap-2">
+          <Plane size={16} style={{ color: "#002561" }} />
+          기내 좌석 배치도
+          <span className="text-xs font-bold text-slate-400">— {flight.aircraft}</span>
+        </h3>
+        {/* 범례 */}
+        <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-slate-700 inline-block" /> 예약됨</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-slate-100 border border-slate-300 inline-block" /> 여석</span>
+        </div>
+      </div>
+
+      {/* 클래스 범례 바 */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {flight.classes.map(cls => (
+          <div key={cls.code} className="flex items-center gap-1.5">
+            <span className={`w-3 h-3 rounded-sm inline-block ${
+              cls.name.includes("프레스티지") ? "bg-amber-500" :
+              cls.name.includes("정상") ? "bg-blue-600" :
+              cls.name.includes("할인") ? "bg-cyan-500" : "bg-slate-400"
+            }`} />
+            <span className="text-[10px] font-bold text-slate-600">{cls.name} ({cls.sold}/{cls.seats})</span>
+          </div>
+        ))}
+      </div>
+
+      {/* 기내 배치도: 클래스 구역별 렌더링 */}
+      <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+        {flight.classes.map(cls => {
+          const { grid, colsPerSide } = buildGrid(cls);
+          const isPrestige = cls.name.includes("프레스티지");
+          const colLabels = isPrestige ? ["A", "B", "C", "D"] : ["A", "B", "C", "D", "E", "F"];
+
+          return (
+            <div key={cls.code}>
+              {/* 구역 헤더 */}
+              <div className={`flex items-center gap-2 mb-2 px-2 py-1 rounded-lg text-[10px] font-black uppercase ${
+                cls.name.includes("프레스티지") ? "bg-amber-50 text-amber-700" :
+                cls.name.includes("정상") ? "bg-blue-50 text-blue-700" :
+                cls.name.includes("할인") ? "bg-cyan-50 text-cyan-700" : "bg-slate-50 text-slate-600"
+              }`}>
+                <span>{cls.name} 구역</span>
+                <span className="font-normal opacity-70">· {cls.status} · L/F {cls.seats > 0 ? Math.round(cls.sold / cls.seats * 100) : 0}%</span>
+              </div>
+
+              {/* 열 레이블 */}
+              <div
+                className="grid gap-1 mb-1 px-6"
+                style={{ gridTemplateColumns: `repeat(${colsPerSide}, 1fr) 12px repeat(${colsPerSide}, 1fr)` }}
+              >
+                {colLabels.slice(0, colsPerSide).map(l => (
+                  <div key={l} className="text-[9px] text-center font-black text-slate-400">{l}</div>
+                ))}
+                <div />
+                {colLabels.slice(colsPerSide).map(l => (
+                  <div key={l} className="text-[9px] text-center font-black text-slate-400">{l}</div>
+                ))}
+              </div>
+
+              {/* 좌석 행 */}
+              <div className="space-y-1">
+                {grid.map((row, rIdx) => (
+                  <div key={rIdx} className="flex items-center gap-1">
+                    {/* 행 번호 */}
+                    <span className="text-[9px] text-slate-300 font-bold w-5 text-right shrink-0">{rIdx + 1}</span>
+                    {/* 좌측 좌석들 */}
+                    <div className="flex gap-1">
+                      {row.slice(0, colsPerSide).map((seat, cIdx) => (
+                        seat.exists ? (
+                          <button
+                            key={cIdx}
+                            title={`${seat.seatId} · ${cls.name} · ${cls.price.toLocaleString()}원 · ${seat.sold ? "예약됨" : "여석"}`}
+                            onMouseEnter={() => setHoveredSeat({ cls: cls.name, seatId: seat.seatId, sold: seat.sold })}
+                            onMouseLeave={() => setHoveredSeat(null)}
+                            className={`w-6 h-6 rounded-sm text-[7px] font-black transition-all hover:scale-110 ${clsColor(cls.name, seat.sold, cls.status)} ${seat.sold ? "text-white" : "text-slate-500"}`}
+                          >
+                            {seat.sold ? "" : ""}
+                          </button>
+                        ) : <div key={cIdx} className="w-6 h-6" />
+                      ))}
+                    </div>
+                    {/* 통로 */}
+                    <div className="w-3" />
+                    {/* 우측 좌석들 */}
+                    <div className="flex gap-1">
+                      {row.slice(colsPerSide).map((seat, cIdx) => (
+                        seat.exists ? (
+                          <button
+                            key={cIdx}
+                            title={`${seat.seatId} · ${cls.name} · ${cls.price.toLocaleString()}원 · ${seat.sold ? "예약됨" : "여석"}`}
+                            onMouseEnter={() => setHoveredSeat({ cls: cls.name, seatId: seat.seatId, sold: seat.sold })}
+                            onMouseLeave={() => setHoveredSeat(null)}
+                            className={`w-6 h-6 rounded-sm text-[7px] font-black transition-all hover:scale-110 ${clsColor(cls.name, seat.sold, cls.status)} ${seat.sold ? "text-white" : "text-slate-500"}`}
+                          >
+                            {seat.sold ? "" : ""}
+                          </button>
+                        ) : <div key={cIdx} className="w-6 h-6" />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 호버 정보 */}
+      {hoveredSeat && (
+        <div className="mt-3 px-3 py-2 bg-slate-800 text-white text-[11px] rounded-lg font-bold">
+          좌석 {hoveredSeat.seatId} · {hoveredSeat.cls} · {hoveredSeat.sold ? "예약됨" : "여석"}
+        </div>
+      )}
     </div>
   );
 }

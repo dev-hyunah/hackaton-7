@@ -10,6 +10,7 @@ load_dotenv()
 from app.database import engine
 from app.models import models
 from app.routers import fare, ai_recommendation, competitor, simulation, report, dashboard
+from app.routers import rm_optimize
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -40,6 +41,7 @@ app.include_router(ai_recommendation.router)
 app.include_router(competitor.router)
 app.include_router(simulation.router)
 app.include_router(report.router)
+app.include_router(rm_optimize.router)
 
 
 @app.get("/health")
