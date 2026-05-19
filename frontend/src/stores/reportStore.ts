@@ -2,19 +2,58 @@ import { create } from 'zustand';
 import { revenueHistory } from '../data/mockData';
 import type { ReportDTO, ReportStatus } from '../types';
 
-const ROUTE_PERF = [
+// 전 노선 성과 데이터 (필터링 기준)
+const ALL_ROUTE_PERF = [
   { route: 'GMP-CJU', revenue: 182_400_000, target: 160_000_000, loadFactor: 87 },
-  { route: 'GMP-PUS', revenue: 94_500_000, target: 110_000_000, loadFactor: 58 },
+  { route: 'GMP-PUS', revenue: 94_500_000,  target: 110_000_000, loadFactor: 58 },
   { route: 'ICN-CJU', revenue: 138_200_000, target: 130_000_000, loadFactor: 86 },
-  { route: 'GMP-TAE', revenue: 41_800_000, target: 50_000_000, loadFactor: 48 },
+  { route: 'GMP-TAE', revenue: 41_800_000,  target: 50_000_000,  loadFactor: 48 },
+  { route: 'GMP-KWJ', revenue: 35_600_000,  target: 40_000_000,  loadFactor: 52 },
+  { route: 'ICN-PUS', revenue: 88_900_000,  target: 100_000_000, loadFactor: 61 },
+  { route: 'GMP-KPO', revenue: 32_100_000,  target: 38_000_000,  loadFactor: 55 },
+  { route: 'GMP-RSU', revenue: 28_400_000,  target: 35_000_000,  loadFactor: 49 },
 ];
 
-const YIELD_DATA = [
-  { month: '2월', yield: 82, target: 78 },
-  { month: '3월', yield: 89, target: 82 },
-  { month: '4월', yield: 85, target: 84 },
-  { month: '5월', yield: 91, target: 86 },
-];
+// 월별 Yield 데이터 (월 번호 → 데이터)
+const YIELD_BY_MONTH: Record<number, { yield: number; target: number }> = {
+  1: { yield: 78, target: 75 },
+  2: { yield: 82, target: 78 },
+  3: { yield: 89, target: 82 },
+  4: { yield: 85, target: 84 },
+  5: { yield: 91, target: 86 },
+  6: { yield: 88, target: 85 },
+  7: { yield: 95, target: 90 },
+  8: { yield: 93, target: 91 },
+  9: { yield: 86, target: 83 },
+  10: { yield: 84, target: 82 },
+  11: { yield: 80, target: 79 },
+  12: { yield: 90, target: 88 },
+};
+
+// "5/8" 형식의 date 문자열을 Date 객체로 변환 (연도 2026 고정)
+function parseHistoryDate(d: string): Date {
+  const [m, day] = d.split('/');
+  return new Date(2026, parseInt(m) - 1, parseInt(day));
+}
+
+// 기간에 포함되는 월 목록 반환
+function getMonthsInRange(start: string, end: string): number[] {
+  const s = new Date(start);
+  const e = new Date(end);
+  const months: number[] = [];
+  const cur = new Date(s.getFullYear(), s.getMonth(), 1);
+  while (cur <= e) {
+    months.push(cur.getMonth() + 1);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return months;
+}
+
+// 기간에 따라 노선 수익을 일할 비례 스케일링 (전체 기간 = 90일 기준)
+function scaleRevenue(revenue: number, start: string, end: string): number {
+  const days = Math.max(1, (new Date(end).getTime() - new Date(start).getTime()) / 86_400_000);
+  return Math.round(revenue * (days / 90));
+}
 
 interface ReportStore {
   reportData: ReportDTO | null;
@@ -38,8 +77,40 @@ export const useReportStore = create<ReportStore>((set, get) => ({
   generateReport: async (route, start, end) => {
     set({ reportStatus: 'generating' });
     await new Promise((r) => setTimeout(r, 1200));
-    const totalRevenue = ROUTE_PERF.reduce((s, r) => s + r.revenue, 0);
-    const totalTarget = ROUTE_PERF.reduce((s, r) => s + r.target, 0);
+
+    // 노선 필터링
+    const filteredRoutes = route
+      ? ALL_ROUTE_PERF.filter((r) => r.route === route)
+      : ALL_ROUTE_PERF;
+
+    // 기간 비례 스케일링 적용
+    const routePerformance = filteredRoutes.map((r) => ({
+      ...r,
+      revenue: scaleRevenue(r.revenue, start, end),
+      target:  scaleRevenue(r.target,  start, end),
+    }));
+
+    const totalRevenue = routePerformance.reduce((s, r) => s + r.revenue, 0);
+    const totalTarget  = routePerformance.reduce((s, r) => s + r.target,  0);
+
+    // 기간 내 포함되는 월만 Yield 표시
+    const months = getMonthsInRange(start, end);
+    const MONTH_LABELS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+    const yieldTrend = months.map((m) => ({
+      month: MONTH_LABELS[m - 1],
+      ...(YIELD_BY_MONTH[m] ?? { yield: 80, target: 80 }),
+    }));
+
+    // 기간 내 일별 수익 필터링
+    const startDate = new Date(start);
+    const endDate   = new Date(end);
+    const filteredHistory = revenueHistory.filter((d) => {
+      const dt = parseHistoryDate(d.date);
+      return dt >= startDate && dt <= endDate;
+    });
+    // 필터 결과가 없으면 전체 표시 (mock 데이터 범위 벗어난 경우)
+    const historyToShow = filteredHistory.length > 0 ? filteredHistory : revenueHistory;
+
     set({
       reportData: {
         reportId: `RPT-${Date.now()}`,
@@ -49,10 +120,10 @@ export const useReportStore = create<ReportStore>((set, get) => ({
         totalRevenue,
         totalTarget,
         achieveRate: Math.round((totalRevenue / totalTarget) * 100),
-        routePerformance: ROUTE_PERF,
-        yieldTrend: YIELD_DATA,
+        routePerformance,
+        yieldTrend,
         aiStats: { approvedCount: 3, rejectedCount: 1 },
-        revenueHistory: revenueHistory,
+        revenueHistory: historyToShow,
         createdAt: new Date().toISOString(),
       },
       reportStatus: 'ready',
@@ -63,64 +134,273 @@ export const useReportStore = create<ReportStore>((set, get) => ({
     const { reportData } = get();
     if (!reportData) return;
     try {
-      const { default: html2canvas } = await import('html2canvas');
+      const { toPng } = await import('html-to-image');
       const { jsPDF } = await import('jspdf');
       const el = document.querySelector('[data-testid="report-preview"]') as HTMLElement | null;
       if (!el) throw new Error('preview element not found');
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      const imgData = canvas.toDataURL('image/png');
+
+      // html-to-image는 getComputedStyle()로 인라인화하므로 oklch() CSS 변수 파싱 오류 없음
+      const dataUrl = await toPng(el, {
+        quality: 1,
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+        filter: (node) => {
+          // 스크롤바 제거
+          if (node instanceof HTMLElement && node.style) {
+            node.style.overflow = 'visible';
+          }
+          return true;
+        },
+      });
+
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((res) => { img.onload = res; });
+
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
       const imgW = pageW;
-      const imgH = (canvas.height / canvas.width) * imgW;
-      let y = 0;
-      let remaining = imgH;
-      while (remaining > 0) {
-        pdf.addImage(imgData, 'PNG', 0, -y, imgW, imgH);
-        remaining -= pageH;
-        y += pageH;
-        if (remaining > 0) pdf.addPage();
+      const imgH = (img.height / img.width) * imgW;
+
+      let renderedHeight = 0;
+      while (renderedHeight < imgH) {
+        if (renderedHeight > 0) pdf.addPage();
+        pdf.addImage(dataUrl, 'PNG', 0, -renderedHeight, imgW, imgH);
+        renderedHeight += pageH;
       }
+
       pdf.save(`RM_Report_${reportData.reportId}.pdf`);
     } catch (e) {
       console.error('PDF 생성 실패:', e);
-      // fallback: text blob with correct extension
-      const content = buildTextContent(reportData);
-      downloadBlob(content, `RM_Report_${reportData.reportId}.pdf`, 'application/pdf');
+      alert('PDF 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
     }
   },
 
   downloadDocx: (_reportId) => {
     const { reportData } = get();
     if (!reportData) return;
-    import('docx').then(({ Document, Paragraph, TextRun, HeadingLevel, Packer }) => {
+    import('docx').then(({
+      Document, Paragraph, TextRun, HeadingLevel, Packer,
+      Table, TableRow, TableCell, WidthType, BorderStyle,
+      AlignmentType, ShadingType,
+    }) => {
+      const KE_NAVY = '002561';
+      const EMERALD = '059669';
+      const GRAY_BG = 'F8FAFC';
+      const HEADER_BG = 'EFF6FF';
+
+      const makeCell = (text: string, opts: {
+        bold?: boolean; bg?: string; color?: string; align?: typeof AlignmentType[keyof typeof AlignmentType];
+      } = {}) =>
+        new TableCell({
+          shading: opts.bg ? { type: ShadingType.CLEAR, fill: opts.bg } : undefined,
+          children: [new Paragraph({
+            alignment: opts.align ?? AlignmentType.LEFT,
+            children: [new TextRun({
+              text,
+              bold: opts.bold,
+              color: opts.color ?? '374151',
+              size: 20,
+            })],
+          })],
+        });
+
+      const tableStyle = {
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top:    { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          left:   { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          right:  { style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          insideH:{ style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+          insideV:{ style: BorderStyle.SINGLE, size: 1, color: 'E5E7EB' },
+        },
+      };
+
+      const spacer = new Paragraph({ text: '' });
+
+      // ── Executive Summary 표 ──
+      const aiContrib = ((reportData.totalRevenue - 430_000_000) / 1_000_000).toFixed(0);
+      const summaryTable = new Table({
+        ...tableStyle,
+        rows: [
+          new TableRow({ children: [
+            makeCell('항목', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('실적', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('비고', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+          ]}),
+          new TableRow({ children: [
+            makeCell('총 수익'),
+            makeCell(`${(reportData.totalRevenue / 100_000_000).toFixed(2)}억원`, { bold: true, color: EMERALD }),
+            makeCell(`목표 ${(reportData.totalTarget / 100_000_000).toFixed(2)}억원`),
+          ]}),
+          new TableRow({ children: [
+            makeCell('목표 달성률'),
+            makeCell(`${reportData.achieveRate}%`, { bold: true, color: reportData.achieveRate >= 100 ? EMERALD : 'D97706' }),
+            makeCell(reportData.achieveRate >= 100 ? '목표 초과 달성 ✓' : '목표 미달'),
+          ]}),
+          new TableRow({ children: [
+            makeCell('AI 가격 수익 기여'),
+            makeCell(`+${aiContrib}M원`, { bold: true, color: KE_NAVY }),
+            makeCell(`수동 승인 ${reportData.aiStats.approvedCount}건 적용분`),
+          ]}),
+        ],
+      });
+
+      // ── 노선별 수익 표 ──
+      const routeTable = new Table({
+        ...tableStyle,
+        rows: [
+          new TableRow({ children: [
+            makeCell('노선', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('실적 수익', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('목표 수익', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('달성률', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('L/F', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+          ]}),
+          ...reportData.routePerformance.map((r) => {
+            const rate = Math.round((r.revenue / r.target) * 100);
+            return new TableRow({ children: [
+              makeCell(r.route, { bold: true }),
+              makeCell(`${r.revenue.toLocaleString()}원`),
+              makeCell(`${r.target.toLocaleString()}원`),
+              makeCell(`${rate}%`, { color: rate >= 100 ? EMERALD : 'D97706', bold: true }),
+              makeCell(`${r.loadFactor}%`),
+            ]});
+          }),
+        ],
+      });
+
+      // ── Yield 추이 표 ──
+      const yieldTable = new Table({
+        ...tableStyle,
+        rows: [
+          new TableRow({ children: [
+            makeCell('월', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('실제 Yield', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('목표 Yield', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('달성 여부', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+          ]}),
+          ...reportData.yieldTrend.map((y) =>
+            new TableRow({ children: [
+              makeCell(y.month, { bold: true }),
+              makeCell(`${y.yield}%`, { color: y.yield >= y.target ? EMERALD : 'D97706', bold: true }),
+              makeCell(`${y.target}%`),
+              makeCell(y.yield >= y.target ? '달성 ✓' : '미달', { color: y.yield >= y.target ? EMERALD : 'D97706' }),
+            ]})
+          ),
+        ],
+      });
+
+      // ── AI 기여도 표 ──
+      const aiTable = new Table({
+        ...tableStyle,
+        rows: [
+          new TableRow({ children: [
+            makeCell('구분', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('건수', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+          ]}),
+          new TableRow({ children: [
+            makeCell('수동 승인'),
+            makeCell(`${reportData.aiStats.approvedCount}건`, { bold: true, color: EMERALD }),
+          ]}),
+          new TableRow({ children: [
+            makeCell('거부'),
+            makeCell(`${reportData.aiStats.rejectedCount}건`, { bold: true, color: 'EF4444' }),
+          ]}),
+        ],
+      });
+
+      // ── 일별 수익 표 ──
+      const dailyTable = new Table({
+        ...tableStyle,
+        rows: [
+          new TableRow({ children: [
+            makeCell('날짜', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('수익', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('예약 건수', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+            makeCell('평균 단가', { bold: true, bg: HEADER_BG, color: KE_NAVY }),
+          ]}),
+          ...reportData.revenueHistory.map((d) =>
+            new TableRow({ children: [
+              makeCell(`2026/${d.date}`),
+              makeCell(`${d.revenue.toLocaleString()}원`, { bold: true }),
+              makeCell(`${d.bookings}건`),
+              makeCell(`${Math.round(d.revenue / d.bookings).toLocaleString()}원`),
+            ]})
+          ),
+        ],
+      });
+
       const doc = new Document({
+        styles: {
+          default: {
+            document: { run: { font: 'Malgun Gothic', size: 22 } },
+          },
+        },
         sections: [{
           properties: {},
           children: [
-            new Paragraph({ text: 'Revenue Management Report', heading: HeadingLevel.HEADING_1 }),
-            new Paragraph({ text: `기간: ${reportData.periodStart} ~ ${reportData.periodEnd}` }),
-            new Paragraph({ text: `노선: ${reportData.route ?? '국내선 전체'}` }),
-            new Paragraph({ text: '' }),
-            new Paragraph({ text: 'Executive Summary', heading: HeadingLevel.HEADING_2 }),
-            new Paragraph({ children: [new TextRun({ text: `총 수익: ${reportData.totalRevenue.toLocaleString()}원`, bold: true })] }),
-            new Paragraph({ text: `목표 수익: ${reportData.totalTarget.toLocaleString()}원` }),
-            new Paragraph({ children: [new TextRun({ text: `목표 달성률: ${reportData.achieveRate}%`, bold: true })] }),
-            new Paragraph({ text: '' }),
-            new Paragraph({ text: 'AI 가격 추천 통계', heading: HeadingLevel.HEADING_2 }),
-            new Paragraph({ text: `수동 승인: ${reportData.aiStats.approvedCount}건` }),
-            new Paragraph({ text: `거부: ${reportData.aiStats.rejectedCount}건` }),
-            new Paragraph({ text: '' }),
-            new Paragraph({ text: '노선별 수익', heading: HeadingLevel.HEADING_2 }),
-            ...reportData.routePerformance.map(r =>
-              new Paragraph({ text: `${r.route}: ${r.revenue.toLocaleString()}원 / 목표 ${r.target.toLocaleString()}원 (달성률 ${Math.round(r.revenue / r.target * 100)}%, L/F ${r.loadFactor}%)` })
-            ),
-            new Paragraph({ text: '' }),
-            new Paragraph({ text: `생성일시: ${reportData.createdAt}` }),
+            // ── 표지 ──
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: 'Yield Management Report', bold: true, size: 48, color: KE_NAVY })],
+            }),
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({
+                text: `${reportData.periodStart} ~ ${reportData.periodEnd}  |  ${reportData.route ?? '국내선 전체 노선'}`,
+                size: 24, color: '6B7280',
+              })],
+            }),
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new TextRun({ text: `생성일시: ${reportData.createdAt}`, size: 20, color: '9CA3AF' })],
+            }),
+            spacer,
+
+            // ── Executive Summary ──
+            new Paragraph({ text: 'Executive Summary', heading: HeadingLevel.HEADING_1 }),
+            summaryTable,
+            spacer,
+            new Paragraph({
+              children: [
+                new TextRun({ text: '수익 최적화 결론: ', bold: true, color: KE_NAVY, size: 20 }),
+                new TextRun({
+                  text: `AI 추천 수동 승인 ${reportData.aiStats.approvedCount}건으로 기준 대비 수익 약 ` +
+                    `+${((reportData.totalRevenue - 430_000_000) / 430_000_000 * 100).toFixed(1)}% 향상. ` +
+                    `목표 달성률 ${reportData.achieveRate}%로 ` +
+                    (reportData.achieveRate >= 100 ? '목표 초과 달성.' : '목표 미달 — 하위 노선 단가 전략 재검토 필요.'),
+                  size: 20, color: '374151',
+                }),
+              ],
+              shading: { type: ShadingType.CLEAR, fill: GRAY_BG },
+            }),
+            spacer,
+
+            // ── 노선별 수익 ──
+            new Paragraph({ text: '노선별 수익 달성률', heading: HeadingLevel.HEADING_1 }),
+            routeTable,
+            spacer,
+
+            // ── Yield 추이 ──
+            new Paragraph({ text: '월별 Yield 추이', heading: HeadingLevel.HEADING_1 }),
+            yieldTable,
+            spacer,
+
+            // ── AI 기여도 ──
+            new Paragraph({ text: 'AI 가격 추천 수익 기여도', heading: HeadingLevel.HEADING_1 }),
+            aiTable,
+            spacer,
+
+            // ── 일별 수익 ──
+            new Paragraph({ text: '최근 8일 일별 수익', heading: HeadingLevel.HEADING_1 }),
+            dailyTable,
           ],
         }],
       });
+
       Packer.toBlob(doc).then((blob) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -131,8 +411,7 @@ export const useReportStore = create<ReportStore>((set, get) => ({
       });
     }).catch((e) => {
       console.error('DOCX 생성 실패:', e);
-      const content = buildTextContent(reportData);
-      downloadBlob(content, `RM_Report_${reportData.reportId}.docx`, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      alert('DOCX 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
     });
   },
 
@@ -155,24 +434,3 @@ export const useReportStore = create<ReportStore>((set, get) => ({
   },
 }));
 
-function buildTextContent(reportData: ReportDTO): string {
-  return [
-    'REVENUE MANAGEMENT REPORT',
-    '',
-    `기간: ${reportData.periodStart} ~ ${reportData.periodEnd}`,
-    `노선: ${reportData.route ?? '국내선 전체'}`,
-    `총 수익: ${reportData.totalRevenue.toLocaleString()}원`,
-    `목표 달성률: ${reportData.achieveRate}%`,
-    `생성일: ${reportData.createdAt}`,
-  ].join('\n');
-}
-
-function downloadBlob(content: string, filename: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}

@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { competitorPrices, buildDashboardFlights, KE_DOMESTIC_ROUTES } from "../data/mockData";
-import { TrendingUp, TrendingDown, Minus, Eye, RefreshCw, Calendar } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Eye, Calendar } from "lucide-react";
 
 const MY_AIRLINE = "대한항공";
 const CLASSES = ["C", "Y", "M", "V"] as const;
@@ -24,17 +24,8 @@ function mapCompClass(bookingClass: string): string {
 export default function CompetitorMonitor({ refreshKey }: { refreshKey?: number }) {
   const [selectedRoute, setSelectedRoute] = useState(KE_DOMESTIC_ROUTES[0]);
   const [lastUpdated, setLastUpdated] = useState(todayStr());
-  const [refreshing, setRefreshing] = useState(false);
 
-  const handleRefresh = useCallback(() => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setLastUpdated(new Date().toISOString().slice(0, 16).replace("T", " "));
-      setRefreshing(false);
-    }, 700);
-  }, []);
-
-  // refreshKey가 바뀌면 (App 헤더 새로고침) 경쟁사 데이터도 갱신
+  // App 헤더 새로고침 버튼 클릭 시 경쟁사 데이터도 갱신
   const [prevKey, setPrevKey] = useState(refreshKey);
   if (refreshKey !== prevKey) {
     setPrevKey(refreshKey);
@@ -77,20 +68,10 @@ export default function CompetitorMonitor({ refreshKey }: { refreshKey?: number 
           <h2 className="text-xl font-bold text-gray-800">경쟁사 가격 모니터링</h2>
           <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-medium">AI Mock Data</span>
         </div>
-        {/* 당일 날짜 표시 + 새로고침 */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-full px-3 py-1.5 text-xs font-bold text-blue-700">
-            <Calendar size={12} />
-            당일 {lastUpdated} 기준
-          </div>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-500 hover:border-indigo-300 hover:text-indigo-600 text-xs font-medium transition-all disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
-            새로고침
-          </button>
+        {/* 당일 날짜 표시 */}
+        <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-full px-3 py-1.5 text-xs font-bold text-blue-700">
+          <Calendar size={12} />
+          당일 {lastUpdated} 기준
         </div>
       </div>
 

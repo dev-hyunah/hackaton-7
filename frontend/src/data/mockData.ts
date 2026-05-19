@@ -265,11 +265,12 @@ export function buildWeekDays(baseDate: Date): WeekDay[] {
 }
 
 export const KE_DOMESTIC_ROUTES = [
-  "GMP-CJU", "GMP-PUS", "GMP-CJJ", "GMP-TAE", "GMP-KWJ",
+  "GMP-CJU", "GMP-PUS", "GMP-TAE", "GMP-KWJ",
   "ICN-CJU", "ICN-PUS", "GMP-KPO", "GMP-RSU",
 ];
 
 // 노선별 실제 대한항공 국내선 항공편 스케줄 (기종·좌석 수 포함)
+
 // 기종별 좌석 구성:
 //   B737-900ER : 프레스티지 8 / 일반석 정상 35 / 일반석 할인 95 / 일반석 특가 62 = 200석 (실제 B737-9 국내선 기준)
 //   B737-800   : 프레스티지 8 / 일반석 정상 28 / 일반석 할인 76 / 일반석 특가 46 = 158석

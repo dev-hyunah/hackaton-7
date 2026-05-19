@@ -425,6 +425,12 @@ export default function FareManagement() {
   const margin  = revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : "0.0";
   const soldSeats = selectedFlight.classes.reduce((s, c) => s + c.sold, 0);
 
+  // 선택 항공편에 미처리 AI 추천이 하나라도 있는지 여부
+  const hasPendingAi = selectedFlight.classes.some(c => {
+    const key = `${selectedFlight.id}-${c.code}`;
+    return c.aiPrice !== c.price && !rejectedClasses.has(key) && !confirmedClasses.has(key);
+  });
+
   return (
     <div className="space-y-0" data-testid="fare-management-page">
 
@@ -530,48 +536,89 @@ export default function FareManagement() {
       {aiPopup && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
           onClick={() => setAiPopup(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start mb-5">
+            {/* 헤더 */}
+            <div className="px-6 py-4 flex justify-between items-center" style={{ background: "linear-gradient(135deg, #002561 0%, #0040a8 100%)" }}>
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-sky-100 rounded-xl text-sky-600"><Sparkles size={20} /></div>
+                <div className="p-2 rounded-xl" style={{ backgroundColor: "rgba(255,255,255,0.18)" }}>
+                  <Sparkles size={18} className="text-white" />
+                </div>
                 <div>
-                  <h3 className="font-black text-slate-800 text-base">AI 긴급 전략 제안</h3>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">External Factor Detected</p>
+                  <h3 className="font-black text-white text-base tracking-tight">AI 긴급 전략 제안</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: "#93c5fd" }}>External Factor Detected</p>
                 </div>
               </div>
-              <button onClick={() => setAiPopup(null)} className="text-slate-300 hover:text-slate-500 transition-colors">
+              <button onClick={() => setAiPopup(null)} className="transition-colors" style={{ color: "rgba(255,255,255,0.5)" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "white")}
+                onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.5)")}
+              >
                 <XCircle size={22} />
               </button>
             </div>
-            <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 mb-5">
-              <div className="flex items-center gap-1.5 mb-2">
-                <Sparkles size={12} className="text-sky-500" />
-                <span className="text-[10px] font-black text-sky-600 uppercase tracking-wider">분석 결과</span>
+
+            <div className="p-6">
+              {/* 분석 결과 */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-block w-1 h-4 rounded-full bg-sky-500"></span>
+                  <span className="text-[11px] font-black text-sky-600 uppercase tracking-wider">분석 결과</span>
+                </div>
+                <p className="text-sm text-slate-700 leading-relaxed">
+                  {aiPopup.desc.split(/(즉각|즉시|권고|인상|조정|회수|수요 변동|긴급|경고|주의|상승|감소|위험)/).map((part, i) =>
+                    /(즉각|즉시|권고|인상|조정|회수|수요 변동|긴급|경고|주의|상승|감소|위험)/.test(part)
+                      ? <mark key={i} className="not-italic rounded px-0.5" style={{ backgroundColor: "#fef3c7", color: "#b45309", fontWeight: 900 }}>{part}</mark>
+                      : part
+                  )}
+                </p>
               </div>
-              <p className="text-xs text-slate-700 leading-relaxed font-medium">{aiPopup.desc}</p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                data-testid="strategy-reject-btn"
-                onClick={() => setAiPopup(null)}
-                className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-black text-sm hover:bg-slate-200 transition-all"
-              >
-                기각
-              </button>
-              <button
-                data-testid="strategy-approve-btn"
-                onClick={applyAiPopup}
-                className="flex-1 text-white py-3 rounded-xl font-black text-sm hover:opacity-90 transition-all shadow-md active:scale-95"
-                style={{ backgroundColor: BRAND }}
-              >
-                전략 승인 및 적용
-              </button>
+
+              {/* 권고 운임 카드 */}
+              {aiPopup.recommendedPrice && aiPopup.recommendedPrice > 0 && (
+                <div className="rounded-xl p-4 mb-5 flex items-center justify-between" style={{ background: "linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%)", border: "1px solid #bae6fd" }}>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-wider mb-1" style={{ color: "#0284c7" }}>권고 적용 운임</p>
+                    <p className="text-2xl font-black" style={{ color: "#002561" }}>{fmtW(aiPopup.recommendedPrice)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-bold mb-1 text-slate-400">현재 운임 대비</p>
+                    <p className={`text-lg font-black ${aiPopup.recommendedPrice > selectedFlight.currentPrice ? "text-red-500" : "text-emerald-500"}`}>
+                      {aiPopup.recommendedPrice > selectedFlight.currentPrice ? "▲" : "▼"}
+                      {" "}{Math.abs(Math.round((aiPopup.recommendedPrice / selectedFlight.currentPrice - 1) * 100))}%
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 액션 버튼 */}
+              <div className="flex gap-3">
+                <button
+                  data-testid="strategy-reject-btn"
+                  onClick={() => setAiPopup(null)}
+                  className="flex-1 py-3 rounded-xl font-black text-sm transition-all"
+                  style={{ backgroundColor: "#f1f5f9", color: "#64748b" }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#e2e8f0")}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = "#f1f5f9")}
+                >
+                  기각
+                </button>
+                <button
+                  data-testid="strategy-approve-btn"
+                  onClick={applyAiPopup}
+                  className="flex-1 text-white py-3 rounded-xl font-black text-sm transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                  style={{ backgroundColor: BRAND }}
+                  onMouseEnter={e => (e.currentTarget.style.opacity = "0.88")}
+                  onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+                >
+                  <CheckCircle size={15} />
+                  전략 승인 및 적용
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -935,29 +982,33 @@ export default function FareManagement() {
                   />
                 </div>
               </div>
-              {confirmError && (
-                <div className="mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-1.5">
-                  <XCircle size={13} className="shrink-0" />
-                  <span>{confirmError}</span>
-                </div>
+              {hasPendingAi && (
+                <>
+                  {confirmError && (
+                    <div className="mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-1.5">
+                      <XCircle size={13} className="shrink-0" />
+                      <span>{confirmError}</span>
+                    </div>
+                  )}
+                  <button
+                    data-testid="confirm-inventory-btn"
+                    onClick={handleConfirmInventory}
+                    disabled={confirmLoading}
+                    className={`w-full py-3 sm:py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-60 ${
+                      confirmDone ? "bg-green-500 text-white" : confirmError ? "bg-red-500 text-white" : "text-white hover:opacity-90"
+                    }`}
+                    style={confirmDone || confirmError ? {} : { backgroundColor: BRAND }}
+                  >
+                    {confirmLoading
+                      ? <><RefreshCw size={15} className="animate-spin" /> 저장 중...</>
+                      : confirmDone
+                      ? <><CheckCircle size={15} /> 저장 완료</>
+                      : confirmError
+                      ? <><XCircle size={15} /> 저장 실패</>
+                      : <><Plane size={15} /> 인벤토리 실시간 통제 확정</>}
+                  </button>
+                </>
               )}
-              <button
-                data-testid="confirm-inventory-btn"
-                onClick={handleConfirmInventory}
-                disabled={confirmLoading}
-                className={`w-full py-3 sm:py-4 rounded-xl font-black text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-60 ${
-                  confirmDone ? "bg-green-500 text-white" : confirmError ? "bg-red-500 text-white" : "text-white hover:opacity-90"
-                }`}
-                style={confirmDone || confirmError ? {} : { backgroundColor: BRAND }}
-              >
-                {confirmLoading
-                  ? <><RefreshCw size={15} className="animate-spin" /> 저장 중...</>
-                  : confirmDone
-                  ? <><CheckCircle size={15} /> 저장 완료</>
-                  : confirmError
-                  ? <><XCircle size={15} /> 저장 실패</>
-                  : <><Plane size={15} /> 인벤토리 실시간 통제 확정</>}
-              </button>
             </div>
           </div>
         </aside>
