@@ -1,0 +1,11 @@
+frontend/
+aidlc-docs/
+reference/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+backend/rm_system.db
+backend/tests/
+**/.env
+**/.env.*
+!**/.env.example
