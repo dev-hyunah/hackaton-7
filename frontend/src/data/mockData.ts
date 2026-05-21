@@ -1310,17 +1310,9 @@ export function buildDashboardFlights(
     const priceM = r1k(priceY * mMul);
     const priceV = r1k(priceY * vMul);
 
-    // AI 추천가 (LF 기반)
-    const hasAiRec = idx % 3 !== 1;
-    const aiMulHigh = 1.12;
-    const aiMulLow = 0.9;
-    const aiMul = hasAiRec
-      ? lf >= 80
-        ? aiMulHigh
-        : lf <= 55
-          ? aiMulLow
-          : 1.0
-      : 1.0;
+    // AI 추천가: 수요 급증(LF≥80) → 인상, 수요 저조(LF≤55) → 인하, 안정적(56~79) → 추천 없음
+    const hasAiRec = lf >= 80 || lf <= 55;
+    const aiMul = lf >= 80 ? 1.12 : lf <= 55 ? 0.9 : 1.0;
 
     // 기종별 baseCost 보정
     const sizeMul =
@@ -1458,4 +1450,35 @@ export function buildDashboardFlights(
             : `수요 안정적(LF ${lf}%). ${sched.aircraft} 운항. 현행 운임 수준 유지 권고.`,
     };
   });
+}
+
+const statusFromLf = (lf: number): FlightStatus => {
+  if (lf >= 90) return "매진임박";
+  if (lf >= 80) return "수요 급증";
+  if (lf >= 60) return "안정적";
+  return "수요 저조";
+};
+
+/** 단일 항공편에 고객 활동 시뮬레이션 (구매/환불 랜덤 델타) 적용 */
+export function simulateFlight(f: DashboardFlight): DashboardFlight {
+  const updatedClasses = f.classes.map((cls) => {
+    if (cls.status === "Closed") return cls;
+    const available = cls.seats - cls.sold;
+    const roll = Math.random();
+    let delta = 0;
+    if (roll < 0.45 && available > 0) {
+      delta = Math.min(Math.ceil(Math.random() * 3), available);
+    } else if (roll < 0.65 && cls.sold > 0) {
+      delta = -Math.ceil(Math.random() * 2);
+    }
+    if (delta === 0) return cls;
+    const newSold = Math.max(0, Math.min(cls.seats, cls.sold + delta));
+    const newStatus: typeof cls.status =
+      newSold >= cls.seats ? "Sold Out" : cls.status === "Sold Out" ? "Open" : cls.status;
+    return { ...cls, sold: newSold, status: newStatus };
+  });
+  const totalSold = updatedClasses.reduce((s, c) => s + c.sold, 0);
+  const totalSeats = updatedClasses.reduce((s, c) => s + c.seats, 0);
+  const newLf = Math.round((totalSold / totalSeats) * 100);
+  return { ...f, classes: updatedClasses, lf: newLf, status: statusFromLf(newLf) };
 }

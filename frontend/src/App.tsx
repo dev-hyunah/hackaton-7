@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { Table2, LayoutDashboard, Eye, FlaskConical, FileText, Plane, RefreshCw, Menu, X } from "lucide-react";
+import { useFlightsStore } from "./stores/flightsStore";
 import FareManagement from "./components/FareManagement";
 import Dashboard from "./components/Dashboard";
 import CompetitorMonitor from "./components/CompetitorMonitor";
@@ -35,6 +36,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { refreshAllRoutes } = useFlightsStore();
 
   // 브라우저 뒤로/앞으로 가기 지원
   useEffect(() => {
@@ -49,12 +51,14 @@ export default function App() {
 
   const handleRefresh = useCallback(() => {
     setRefreshing(true);
+    // store 전체 시뮬레이션을 여기서 단 한 번만 실행
+    refreshAllRoutes();
     setTimeout(() => {
       setLastUpdated(formatNow());
       setRefreshKey((k) => k + 1);
       setRefreshing(false);
     }, 600);
-  }, []);
+  }, [refreshAllRoutes]);
 
   const navigate = (id: PageId) => {
     window.history.pushState({}, "", `/${id}`);
@@ -169,7 +173,7 @@ export default function App() {
         </header>
 
         <div className={page === "fares" ? "" : "p-4 sm:p-8"}>
-          {page === "dashboard"  && <Dashboard key={refreshKey} />}
+          {page === "dashboard"  && <Dashboard refreshKey={refreshKey} />}
           {page === "fares"      && <FareManagement refreshKey={refreshKey} />}
           {page === "competitor" && <CompetitorMonitor refreshKey={refreshKey} />}
           {page === "simulator"  && <Simulator key={refreshKey} />}

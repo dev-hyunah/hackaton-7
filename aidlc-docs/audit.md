@@ -1,5 +1,44 @@
 # AI-DLC Audit Log
 
+## [ai-rec-lf-based] Construction — AI 추천 LF 기반으로 수정
+**Timestamp**: 2026-05-21T16:30:00Z
+**User Input**: "운임관리에서 AI 추천은 언제 해주는거야? 수요 저조, 매진임박과 상관 없는거야?"
+**AI Response**: "기존 idx % 3 로직을 LF 기반으로 교체: lf>=80 인상+12%, lf<=55 인하-10%, 56~79 추천 없음"
+**Context**: CONSTRUCTION PHASE - Logic Fix
+
+---
+
+## [tab-switch-stable-values] Construction — 탭 이동 시 수치 안정화 (시뮬레이션 단일화)
+**Timestamp**: 2026-05-21T16:00:00Z
+**User Input**: "새로고침을 한번 해서 값이 바뀐 후에 탭을 바꾸면 바꿀때마다 값들이 변해. 예를들어 운임관리에서 새로고침을하고 대시보드로가면 값이 바뀌는 것이 맞아. 그리고 다시 운임관리로 왔을 때는 값이 그대로 있어야 되는데 지금은 다시 또 바뀌고 있어. 그 후에 또 탭 이동을 하면 할때마다 바뀌고, 이거 다시 체크해줘."
+**AI Response**: "시뮬레이션을 App.tsx refreshAllRoutes 단 1회로 단일화, FareManagement refreshKey useEffect는 store 읽기만, 마운트 시 setFlights 재호출 제거, simulateCustomerActivity 제거"
+**Context**: CONSTRUCTION PHASE - Bug Fix
+
+---
+
+## [tab-switch-no-data-change] Construction — 탭 이동 시 수치 불변 + 운임관리 오류 수정
+**Timestamp**: 2026-05-21T15:30:00Z
+**User Input**: "운임관리 들어가면 오류가 나고 있고, 새로고침을 한번 한 이후에 탭 이동 시 여전히 수치가 변하고 있어. 새로고침 버튼을 눌렀을 때만 좌석 점유가 변동이 있고(구매, 환불 등의 이벤트로 인해), 이러한 이유로 가격 추천상황이 달라져야 하고, 각 탭에서 영향을 받아서 같이 변하게 되어야 해. 단순히 탭이 이동될 때는 수치가 변할필요가 없도록 해줘."
+**AI Response**: "FareManagement 초기값 store에서 읽기, loadFlights useEffect 마운트시 store 유지, Dashboard fetchSummary 마운트시 재호출 방지, refreshKey useEffect에서만 시뮬레이션+AI추천 업데이트"
+**Context**: CONSTRUCTION PHASE - Bug Fix
+
+---
+
+## [dashboard-tab-switch-reset-fix] Construction — 탭 이동 시 수치 변동 및 AI 승인대기 초기화 버그 수정
+**Timestamp**: 2026-05-21T15:00:00Z
+**User Input**: "새로고침 없이 탭만 이동해도 대시보드에 총 예약 건수가 바뀌는데 새로고침 버튼을 눌렀을때만 데이터들이 바뀌어야해. 그리고 AI 승인대기도 계속 1로 돌아가는거 같아 로직을 다시 확인해줘."
+**AI Response**: "Dashboard key={refreshKey}→refreshKey prop 교체, aiRecommendationStore fetchRecommendations 머지 방식 변경, Dashboard에서 pendingRecs를 aiRecommendationStore 실시간 카운트로 교체"
+**Context**: CONSTRUCTION PHASE - Bug Fix
+
+---
+
+## [global-refresh-all-routes] Construction — 전체 탭 새로고침 연동
+**Timestamp**: 2026-05-21T14:30:00Z
+**User Input**: "대시보드에서 새로고침을 눌러도 수치들이 변동되면서 운임관리 등의 다른 연관된 부분에 적용이 되어야 할 것 같아. 현재 운임관리 탭일때 새로고침 버튼을 누르는 경우만 연동되고 있는 것 같거든."
+**AI Response**: "simulateFlight를 mockData.ts에 export 함수로 추출, flightsStore에 refreshAllRoutes 액션 추가, App.tsx handleRefresh에서 refreshAllRoutes 직접 호출"
+**Context**: CONSTRUCTION PHASE - Bug Fix (탭 무관 새로고침 연동)
+
+---
 
 ## [simulator-slider-center] Construction — 슬라이더 범위 대칭화
 **Timestamp**: 2026-05-21T22:30:00Z

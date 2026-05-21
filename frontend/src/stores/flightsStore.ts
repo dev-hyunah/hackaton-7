@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { buildDashboardFlights, KE_DOMESTIC_ROUTES } from '../data/mockData';
+import { buildDashboardFlights, simulateFlight, KE_DOMESTIC_ROUTES } from '../data/mockData';
 import type { DashboardFlight } from '../data/mockData';
 
 interface FlightsStore {
@@ -7,6 +7,8 @@ interface FlightsStore {
   flightsByRoute: Record<string, DashboardFlight[]>;
   setFlightsForRoute: (route: string, flights: DashboardFlight[]) => void;
   getFlightsForRoute: (route: string) => DashboardFlight[];
+  /** 전체 노선에 고객 활동 시뮬레이션 적용 — 탭에 관계없이 새로고침 버튼으로 호출 */
+  refreshAllRoutes: () => void;
 }
 
 const todayStr = new Date().toISOString().slice(0, 10);
@@ -23,4 +25,15 @@ export const useFlightsStore = create<FlightsStore>((set, get) => ({
 
   getFlightsForRoute: (route) =>
     get().flightsByRoute[route] ?? buildDashboardFlights(route, todayStr),
+
+  refreshAllRoutes: () => {
+    const current = get().flightsByRoute;
+    const updated = Object.fromEntries(
+      Object.entries(current).map(([route, flights]) => [
+        route,
+        flights.map(simulateFlight),
+      ]),
+    );
+    set({ flightsByRoute: updated });
+  },
 }));

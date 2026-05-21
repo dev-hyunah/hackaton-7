@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell,
@@ -7,6 +7,7 @@ import { TrendingUp, Users, Plane, AlertCircle } from "lucide-react";
 import { KE_DOMESTIC_ROUTES } from "../data/mockData";
 import apiClient from "../api/apiClient";
 import { useFlightsStore } from "../stores/flightsStore";
+import { useAiRecommendationStore } from "../stores/aiRecommendationStore";
 
 const BRAND = "#002561";
 
@@ -249,7 +250,7 @@ function getMockSummary(routeParam: string, days: number): DashboardSummary {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+export default function Dashboard({ refreshKey }: { refreshKey?: number }) {
   const [periodDays, setPeriodDays] = useState(10);
   const [dashboardRoute, setDashboardRoute] = useState("전체");
   const [summary, setSummary] = useState<DashboardSummary>(() =>
@@ -258,24 +259,41 @@ export default function Dashboard() {
 
   const routeParam = dashboardRoute === "전체" ? "all" : dashboardRoute;
 
-  const fetchSummary = useCallback(async () => {
+  const fetchSummary = useCallback(async (route: string, days: number) => {
     try {
       const data = await apiClient.get<DashboardSummary>(
-        `/dashboard/summary?route_id=${routeParam}&days=${periodDays}`
+        `/dashboard/summary?route_id=${route}&days=${days}`
       );
       if (data && data.revenue_history !== undefined) {
         setSummary(data);
         return;
       }
     } catch { /* fall through to mock */ }
-    setSummary(getMockSummary(routeParam, periodDays));
-  }, [routeParam, periodDays]);
+    setSummary(getMockSummary(route, days));
+  }, []);
 
+  // 노선/기간이 실제로 변경될 때만 summary 재조회 (마운트 시 제외)
+  const prevRouteParamRef = useRef(routeParam);
+  const prevPeriodDaysRef = useRef(periodDays);
   useEffect(() => {
-    void fetchSummary();
-  }, [fetchSummary]);
+    const routeChanged = prevRouteParamRef.current !== routeParam;
+    const daysChanged = prevPeriodDaysRef.current !== periodDays;
+    prevRouteParamRef.current = routeParam;
+    prevPeriodDaysRef.current = periodDays;
+    if (!routeChanged && !daysChanged) return;
+    void fetchSummary(routeParam, periodDays);
+  }, [routeParam, periodDays, fetchSummary]);
+
+  // 새로고침 버튼 클릭 시에만 summary 재조회
+  useEffect(() => {
+    if (!refreshKey) return;
+    void fetchSummary(routeParam, periodDays);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   const { flightsByRoute } = useFlightsStore();
+  const { recommendations } = useAiRecommendationStore();
+  const pendingRecsLive = recommendations.filter((r) => r.status === "pending").length;
 
   // FareManagement에서 업데이트된 실시간 flights를 반영한 LF/수익 파생
   const liveStats = useMemo(() => {
@@ -283,11 +301,19 @@ export default function Dashboard() {
     const allFlights = routes.flatMap((r) => flightsByRoute[r] ?? []);
     if (allFlights.length === 0) return null;
 
-    // 편명별 LF
-    const routeLf = allFlights.map((f) => ({
-      label: `${f.flightNo} (${f.time})`,
-      lf: f.lf,
-    }));
+    // "전체" 선택 시 노선별 평균 LF, 특정 노선 선택 시 편명별 LF
+    const routeLf = dashboardRoute === "전체"
+      ? routes.map((r) => {
+          const rFlights = flightsByRoute[r] ?? [];
+          const avg = rFlights.length > 0
+            ? Math.round(rFlights.reduce((s, f) => s + f.lf, 0) / rFlights.length * 10) / 10
+            : 0;
+          return { label: r, lf: avg };
+        })
+      : allFlights.map((f) => ({
+          label: `${f.flightNo} (${f.time})`,
+          lf: f.lf,
+        }));
 
     // 등급별 LF 집계
     const classMap: Record<string, { sold: number; seats: number }> = {};
@@ -388,7 +414,7 @@ export default function Dashboard() {
   const totalRevenue = liveStats ? liveStats.todayRevenue || summary.total_revenue : summary.total_revenue;
   const totalBookings = liveStats ? liveStats.todayBookings || summary.total_bookings : summary.total_bookings;
   const avgLoadFactor = liveStats ? liveStats.avgLf || summary.avg_load_factor : summary.avg_load_factor;
-  const pendingRecs = summary.pending_recommendations;
+  const pendingRecs = pendingRecsLive;
   const filteredHistory = summary.revenue_history;
   const loadFactorData = liveStats ? liveStats.routeLf : summary.route_lf;
 
@@ -503,7 +529,7 @@ export default function Dashboard() {
         {/* Load Factor by Flight */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5" data-testid="lf-by-flight-chart">
           <h3 className="font-semibold text-gray-700 mb-4">
-            항공편별 Load Factor ({routeLabel})
+            {dashboardRoute === "전체" ? "노선별 평균 Load Factor" : `항공편별 Load Factor (${routeLabel})`}
           </h3>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={loadFactorData} layout="vertical" margin={{ left: 20 }}>

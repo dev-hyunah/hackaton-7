@@ -433,12 +433,12 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [showCalendar, setShowCalendar] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState(KE_DOMESTIC_ROUTES[0]);
-  const [flights, setFlights] = useState<DashboardFlight[]>(() =>
-    buildDashboardFlights(KE_DOMESTIC_ROUTES[0], todayStr),
-  );
-  const [selectedFlight, setSelectedFlight] = useState<DashboardFlight>(
-    () => buildDashboardFlights(KE_DOMESTIC_ROUTES[0], todayStr)[0],
-  );
+
+  // 초기값은 store에서 읽어와 탭 전환 시 데이터 유지
+  const { getFlightsForRoute, setFlightsForRoute } = useFlightsStore();
+  const initialFlights = getFlightsForRoute(KE_DOMESTIC_ROUTES[0]);
+  const [flights, setFlights] = useState<DashboardFlight[]>(initialFlights);
+  const [selectedFlight, setSelectedFlight] = useState<DashboardFlight>(initialFlights[0]);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [aiQuery, setAiQuery] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -491,9 +491,8 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
   });
   const aiRef = useRef<HTMLTextAreaElement>(null);
   const { updateFare } = useFareStore();
-  const { approveRecommendation, rejectRecommendation } =
+  const { approveRecommendation, rejectRecommendation, fetchRecommendations } =
     useAiRecommendationStore();
-  const { setFlightsForRoute } = useFlightsStore();
 
   // flights 상태 변경 시 공유 스토어도 동기화 (Dashboard 실시간 연동)
   const setFlightsAndSync = useCallback(
@@ -558,7 +557,20 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
     [],
   );
 
+  // 노선/날짜가 실제로 변경됐을 때만 새로 로드 (마운트 시에는 store 데이터 유지)
+  const prevRouteRef = useRef(selectedRoute);
+  const prevDateRef = useRef(selectedDate);
+
   useEffect(() => {
+    const routeChanged = prevRouteRef.current !== selectedRoute;
+    const dateChanged = prevDateRef.current !== selectedDate;
+    prevRouteRef.current = selectedRoute;
+    prevDateRef.current = selectedDate;
+
+    // 마운트 직후(아무것도 안 바뀐 상태)에는 initialFlights를 그대로 사용 — 재세팅 없음
+    if (!routeChanged && !dateChanged) return;
+
+    // 노선 또는 날짜가 실제 변경된 경우에만 API/mock 재로드
     let cancelled = false;
     const loadFlights = async () => {
       try {
@@ -566,7 +578,6 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
           `/fares/${selectedRoute}?date=${selectedDate}`,
         );
         if (cancelled || !Array.isArray(data) || data.length === 0) {
-          // API 실패 or 데이터 없음 → mock fallback
           const base = buildDashboardFlights(selectedRoute, selectedDate);
           const routeMap = crossRouteAiPrices[selectedRoute];
           const fallback = base.map((f) => {
@@ -575,9 +586,7 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
             return {
               ...f,
               classes: f.classes.map((c) =>
-                flightMap[c.code] != null
-                  ? { ...c, price: flightMap[c.code] }
-                  : c,
+                flightMap[c.code] != null ? { ...c, price: flightMap[c.code] } : c,
               ),
             };
           });
@@ -595,9 +604,7 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
           return {
             ...f,
             classes: f.classes.map((c) =>
-              flightMap[c.code] != null
-                ? { ...c, price: flightMap[c.code] }
-                : c,
+              flightMap[c.code] != null ? { ...c, price: flightMap[c.code] } : c,
             ),
           };
         });
@@ -623,7 +630,9 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
     return () => {
       cancelled = true;
     };
-  }, [selectedRoute, selectedDate, crossRouteAiPrices]);
+  // crossRouteAiPrices는 AI 가격만 반영 — 노선/날짜 변경과 독립적으로 처리
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoute, selectedDate]);
 
   // step 전환 helper: URL도 함께 업데이트
   const goToDetail = (flight: DashboardFlight) => {
@@ -650,71 +659,13 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // 새로고침 시 고객 활동(구매/환불/변경) 시뮬레이션 — 실시간 좌석 변동 연출
-  const simulateCustomerActivity = (flightList: DashboardFlight[]): DashboardFlight[] => {
-    return flightList.map((f) => {
-      const updatedClasses = f.classes.map((cls) => {
-        if (cls.status === "Closed") return cls;
-        const available = cls.seats - cls.sold;
-        // 구매(+1~+3석), 환불(-1~-2석), 변동 없음 — 전체 3가지 중 랜덤
-        const roll = Math.random();
-        let delta = 0;
-        if (roll < 0.45 && available > 0) {
-          delta = Math.min(Math.ceil(Math.random() * 3), available);
-        } else if (roll < 0.65 && cls.sold > 0) {
-          delta = -Math.ceil(Math.random() * 2);
-        }
-        if (delta === 0) return cls;
-        const newSold = Math.max(0, Math.min(cls.seats, cls.sold + delta));
-        const newStatus: typeof cls.status =
-          newSold >= cls.seats ? "Sold Out" : cls.status === "Sold Out" ? "Open" : cls.status;
-        return { ...cls, sold: newSold, status: newStatus };
-      });
-      const totalSold = updatedClasses.reduce((s, c) => s + c.sold, 0);
-      const totalSeats = updatedClasses.reduce((s, c) => s + c.seats, 0);
-      const newLf = Math.round((totalSold / totalSeats) * 100);
-      return {
-        ...f,
-        classes: updatedClasses,
-        lf: newLf,
-        status: FLIGHT_STATUS_MAP(newLf),
-      };
-    });
-  };
-
-  // 상단 새로고침 버튼 연동: refreshKey 변화 시 고객 활동 시뮬레이션 실행
+// 새로고침 버튼: store가 이미 갱신됐으므로 로컬 state만 동기화 + AI 추천 업데이트
   useEffect(() => {
-    if (refreshKey === undefined || refreshKey === 0) return;
-    const doRefresh = async () => {
-      try {
-        const data = await apiClient.get<unknown[]>(
-          `/fares/${selectedRoute}?date=${selectedDate}`,
-        );
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((f) => apiFlightToDashboard(f, selectedRoute));
-          const routeMap = crossRouteAiPrices[selectedRoute];
-          const withCrossAi = mapped.map((f) => {
-            const flightMap = routeMap?.[f.id];
-            if (!flightMap) return f;
-            return {
-              ...f,
-              classes: f.classes.map((c) =>
-                flightMap[c.code] != null ? { ...c, price: flightMap[c.code] } : c,
-              ),
-            };
-          });
-          const refreshed = simulateCustomerActivity(withCrossAi);
-          setFlightsAndSync(refreshed);
-          setSelectedFlight(refreshed.find((f) => f.id === selectedFlight.id) ?? refreshed[0]);
-          return;
-        }
-      } catch { /* fall through */ }
-      const base = buildDashboardFlights(selectedRoute, selectedDate);
-      const refreshed = simulateCustomerActivity(base);
-      setFlightsAndSync(refreshed);
-      setSelectedFlight(refreshed.find((f) => f.id === selectedFlight.id) ?? refreshed[0]);
-    };
-    void doRefresh();
+    if (!refreshKey) return;
+    const refreshed = getFlightsForRoute(selectedRoute);
+    setFlights(refreshed);
+    setSelectedFlight((prev) => refreshed.find((f) => f.id === prev.id) ?? refreshed[0]);
+    fetchRecommendations(selectedRoute);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 

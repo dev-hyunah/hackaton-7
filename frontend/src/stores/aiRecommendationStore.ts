@@ -5,7 +5,10 @@ import type { AiRecommendationDTO, RecommendationStatus } from '../types';
 interface AiRecommendationStore {
   recommendations: AiRecommendationDTO[];
 
+  /** 새 추천을 기존 목록에 머지 — 이미 있는 항목은 status 유지, 없는 항목만 추가 */
   fetchRecommendations: (route?: string) => void;
+  /** 새로고침 시 전체 초기화 후 재생성 */
+  resetRecommendations: (route?: string) => void;
   approveRecommendation: (recommendationId: string) => void;
   rejectRecommendation: (recommendationId: string) => void;
 }
@@ -43,10 +46,25 @@ function buildRecs(route: string): AiRecommendationDTO[] {
   return recs;
 }
 
-export const useAiRecommendationStore = create<AiRecommendationStore>((set) => ({
-  recommendations: buildRecs(KE_DOMESTIC_ROUTES[0]),
+const initialRecs = buildRecs(KE_DOMESTIC_ROUTES[0]);
+
+export const useAiRecommendationStore = create<AiRecommendationStore>((set, get) => ({
+  recommendations: initialRecs,
 
   fetchRecommendations: (route) => {
+    const incoming = buildRecs(route ?? KE_DOMESTIC_ROUTES[0]);
+    const existing = get().recommendations;
+    const existingMap = new Map(existing.map((r) => [r.recommendationId, r]));
+    // 이미 있는 항목은 현재 status 유지, 신규 항목만 pending으로 추가
+    const merged = incoming.map((r) =>
+      existingMap.has(r.recommendationId)
+        ? { ...r, status: existingMap.get(r.recommendationId)!.status }
+        : r,
+    );
+    set({ recommendations: merged });
+  },
+
+  resetRecommendations: (route) => {
     set({ recommendations: buildRecs(route ?? KE_DOMESTIC_ROUTES[0]) });
   },
 

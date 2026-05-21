@@ -4,6 +4,91 @@
 
 ---
 
+## 2026-05-21 — AI 추천 생성 조건 LF 기반으로 수정
+
+**파일**: `frontend/src/data/mockData.ts`
+
+### 변경 내용
+- `hasAiRec`: `idx % 3 !== 1` (편명 인덱스 기반) → `lf >= 80 || lf <= 55` (LF 기반)
+- `aiMul`: 동일 조건 인라인 정리 (`lf >= 80 ? 1.12 : lf <= 55 ? 0.9 : 1.0`)
+
+### 이유
+- 기존 로직은 편명 순서로 추천 여부를 결정해 수요 상태와 무관하게 추천이 생성/미생성됨
+- 수정 후: LF ≥ 80 (수요 급증·매진임박) → +12% 인상 추천, LF ≤ 55 (수요 저조) → -10% 인하 추천, LF 56~79 (안정적) → 추천 없음
+
+---
+
+## 2026-05-21 — 탭 이동 시 수치 안정화 (시뮬레이션 단일화)
+
+**파일**: `frontend/src/App.tsx`, `frontend/src/components/FareManagement.tsx`
+
+### 변경 내용
+- `App.tsx`: `handleRefresh`에서 `refreshAllRoutes()` 호출 복구 — store 전체 시뮬레이션을 여기서 단 1회만 실행
+- `FareManagement.tsx`: `refreshKey useEffect`를 시뮬레이션 직접 실행 → `getFlightsForRoute()`로 store 읽기만 하도록 변경
+- `FareManagement.tsx`: 마운트 시 useEffect에서 `setFlights(stored)` 재호출 제거 → `return`만 (initialFlights가 이미 store 값)
+- `FareManagement.tsx`: 더 이상 사용하지 않는 `simulateCustomerActivity` 함수 제거
+
+### 이유
+- 기존 구조: `refreshAllRoutes()`(store 1차 시뮬레이션) → `refreshKey` 증가 → FareManagement `refreshKey useEffect`에서 `flights` state로 2차 시뮬레이션 → store 재기입 → 탭 이동 시 마운트되는 FareManagement가 2차 시뮬레이션된 store 값을 initialFlights로 읽음
+- 결과: 탭 이동 시마다 store가 계속 덮어써지며 수치 변동
+- 수정: 시뮬레이션은 App.tsx `refreshAllRoutes` 1회로 통일, FareManagement는 읽기만
+
+---
+
+## 2026-05-21 — 탭 이동 시 수치 불변 보장 + 운임관리 오류 수정
+
+**파일**: `frontend/src/components/FareManagement.tsx`, `frontend/src/components/Dashboard.tsx`
+
+### 변경 내용
+- `FareManagement.tsx`:
+  - `flights`/`selectedFlight` 초기값을 `buildDashboardFlights()` 직접 호출 → `getFlightsForRoute()`(store)에서 읽기로 변경
+  - `loadFlights useEffect` 의존성을 `[selectedRoute, selectedDate]`로 단순화, ref로 마운트 시 store 데이터 재사용 (노선/날짜 실제 변경 시에만 재로드)
+  - `refreshKey useEffect`를 현재 flights에 `simulateCustomerActivity` 적용 후 `fetchRecommendations` 호출로 단순화
+  - `useAiRecommendationStore`에서 `fetchRecommendations` 추가 import, 중복 `setFlightsForRoute` 선언 제거
+- `Dashboard.tsx`:
+  - `fetchSummary` 시그니처를 `(route, days)` 파라미터 방식으로 변경 (useCallback 의존성 제거)
+  - `useEffect([fetchSummary])` → ref 비교로 routeParam/periodDays 실제 변경 시에만 호출
+  - `useRef` import 추가
+
+### 이유
+- FareManagement 마운트 시 `buildDashboardFlights()` 재호출 → store와 별개 인스턴스로 수치 불일치
+- `useEffect([fetchSummary])` 패턴이 useCallback 의존성 변화 시마다 실행되어 탭 이동 후 summary 수치 변동
+- `loadFlights`가 마운트 직후 항상 실행되어 store를 덮어씀
+
+---
+
+## 2026-05-21 — 탭 이동 시 수치 변동 및 AI 승인대기 초기화 버그 수정
+
+**파일**: `frontend/src/components/Dashboard.tsx`, `frontend/src/stores/aiRecommendationStore.ts`, `frontend/src/App.tsx`
+
+### 변경 내용
+- `App.tsx`: `<Dashboard key={refreshKey} />` → `<Dashboard refreshKey={refreshKey} />` — key 제거로 탭 전환 시 리마운트 방지
+- `Dashboard.tsx`: `refreshKey` prop 추가, refreshKey 변화 시에만 `fetchSummary` 재호출하는 별도 `useEffect` 추가
+- `Dashboard.tsx`: `pendingRecs`를 `summary.pending_recommendations`(고정 mock값) 대신 `useAiRecommendationStore`의 실시간 카운트로 교체
+- `aiRecommendationStore.ts`: `fetchRecommendations`를 완전 교체 → 기존 상태와 머지(이미 있는 항목은 status 유지, 신규 항목만 pending 추가)하는 방식으로 변경, `resetRecommendations` 별도 추가
+
+### 이유
+- `key={refreshKey}` 사용 시 탭 전환이 아닌 새로고침으로만 key가 바뀌어야 하는데, 새로고침 누를 때마다 리마운트되어 예약 건수가 새로 계산됨
+- `fetchRecommendations` 호출 시 `buildRecs`로 전체를 덮어써 승인/거절 상태가 초기화되는 버그
+
+---
+
+## 2026-05-21 — 전체 탭 새로고침 연동 (탭 무관 flightsStore 업데이트)
+
+**파일**: `frontend/src/data/mockData.ts`, `frontend/src/stores/flightsStore.ts`, `frontend/src/App.tsx`
+
+### 변경 내용
+- `mockData.ts`: `simulateFlight(f: DashboardFlight)` export 함수 추가 — 단일 항공편에 고객 활동(구매/환불 랜덤 델타) 적용
+- `flightsStore.ts`: `refreshAllRoutes()` 액션 추가 — 전체 노선의 현재 flights에 `simulateFlight` 일괄 적용
+- `App.tsx`: `useFlightsStore` import, `handleRefresh`에서 `refreshAllRoutes()` 즉시 호출
+
+### 이유
+- 기존에는 FareManagement 컴포넌트가 마운트된 상태(운임관리 탭)에서만 `useEffect([refreshKey])`가 실행되어 store 업데이트됨
+- 대시보드 등 다른 탭에서 새로고침 시 FareManagement 언마운트 상태라 수치 변동 없음
+- 수정 후: 어느 탭에서든 새로고침 버튼 클릭 시 flightsStore 전체 갱신 → 대시보드 KPI 즉시 반영
+
+---
+
 ## 2026-05-21 — V(특가) L/F 역전 버그 수정 (EMSRb 분리, B안)
 
 **파일**: `frontend/src/data/mockData.ts`
