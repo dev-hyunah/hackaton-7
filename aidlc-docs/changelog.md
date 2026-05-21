@@ -4,6 +4,80 @@
 
 ---
 
+## 2026-05-22 — HTTP 500 백엔드 서버 재기동으로 확정 API 정상화
+
+**파일**: `backend/app/routers/fare.py` (임시 디버그 코드 추가 후 제거, 순 변경 없음)
+
+### 변경 내용
+
+- 인벤토리 확정(`PUT /fares/{flight_id}`) 500 에러 원인 분석 및 해소
+  - 원인: DB 시딩 이전에 기동된 서버 프로세스가 스테일 상태로 계속 실행 중
+  - 해소: 서버 프로세스 재기동 (올바른 PYTHONPATH 설정 포함)
+  - 검증: `PUT /fares/38ef2b87` → `200 OK` 정상 응답 확인
+- `fare.py` 디버그용 예외 핸들러 추가 후 제거 (코드 최종 상태 변화 없음)
+
+---
+
+## 2026-05-21 — 인벤토리 통제 로직 3가지 수정
+
+**파일**: `frontend/src/components/FareManagement.tsx`
+
+### 변경 내용
+
+1. **좌석 총합 초과 방지 (`aiReallocateSeats`)**
+   - 좌석 수 증가 시 eligible 등급의 `sold` 합산이 pool(재배분 가용 좌석)을 초과하면 즉시 에러 반환
+   - 오류 메시지: `"전체 좌석 수(N석)를 초과합니다. 다른 등급의 좌석을 먼저 줄여주세요."`
+   - 기존에는 EMSRb가 음수 버킷을 산출해 합계가 초과되는 버그 발생
+
+2. **인벤토리 확정 버튼: AI 추천 운임으로 저장 (`handleConfirmInventory`)**
+   - `new_price: cls.price` → `cls.aiPrice !== cls.price ? cls.aiPrice : cls.price` 로 변경
+   - AI 추천이 있는 클래스는 aiPrice로, 없으면 현재 price 그대로 백엔드에 저장
+   - 성공 후 로컬 `flights` 상태도 `price = aiPrice`로 갱신 (`setFlightsAndSync`)
+   - `confirmedClasses`, `appliedFlights`에 해당 항공편 전체 등록 → Step1 목록 "적용 완료" 표시
+
+3. **인벤토리 확정 버튼 항상 표시**
+   - 기존: `hasPendingAi`일 때만 표시 (AI 추천 없으면 버튼 숨겨짐)
+   - 변경: 조건 제거, 항상 표시 — 좌석 수 조정 후 확정하는 경우 포함
+
+### 이유
+- `aiReallocateSeats` delta>0(증가) 경로에 총합 검증이 없어 전체 좌석 합이 항공기 정원 초과 가능
+- 확정 버튼이 `cls.price`(수동 편집 운임)를 보내 AI 추천 운임이 반영되지 않았음
+- 확정 성공 후 로컬 상태 미갱신으로 UI가 여전히 "적용 완료" 미표시
+
+---
+
+## 2026-05-21 — 설계 문서 최신화 (README, 애플리케이션 설계서, 아키텍처 설계서)
+
+**파일**: `frontend/README.md`, `aidlc-docs/design/application-design-document.md`, `aidlc-docs/design/architecture-design-document.md`
+
+### 변경 내용
+
+**frontend/README.md**
+- 전역 새로고침 섹션: `key={refreshKey}` 완전 리마운트 설명 → CSS hidden 방식 설명으로 교체
+- `html2canvas` → `html-to-image` (oklch 색상 호환)
+- `AiRecommendations.tsx`가 별도 탭이 아닌 FareManagement 내부 임베드임을 명시
+
+**application-design-document.md**
+- 노선 수 9개 → 8개 (GMP-CJJ 제거)
+- 기종 정보: B737-900 173석 단일 → 3종 (B737-900ER 200석 / B737-800 158석 / A220-300 130석)
+- 컴포넌트 구조: `AiRecommendations` 별도 페이지 항목 제거, FareManagement 내부 통합으로 변경
+- Zustand stores 표에 `flightsStore` 추가 (FareManagement ↔ Dashboard 실시간 연동)
+- FareManagement 상세: `routeDateCache`, `appliedFlights`, 날짜별 상태 격리(`${date}:${key}`) 명시
+- 라우팅 표에서 `/recommendations` 항목 제거, 탭 CSS hidden 방식 설명 추가
+- 탄력성 계수 정정: `-0.6/-1.2/-1.5/-2.0` → `-0.45/-0.95/-1.35/-1.75`
+- PDF 생성 라이브러리: `html2canvas` → `html-to-image`
+
+**architecture-design-document.md**
+- ADR-005 추가: CSS hidden 탭 렌더링 (언마운트 방지)
+- 기존 ADR-005 → ADR-007로 번호 변경
+- Frontend 레이어 뷰에서 `AiRec` 탭 제거, `flightsStore` 추가
+- 컴포넌트 계층도에서 `AiRecommendations` 독립 섹션 제거, FareManagement 내부 통합으로 변경
+- 데이터 흐름 시나리오 4 추가: FareManagement → flightsStore → Dashboard 실시간 연동
+- 탄력성 계수 정정: 프레스티지 -0.6 외 → C: -0.45, Y: -0.95, M: -1.35, V: -1.75
+- 기술 스택: `html2canvas` → `html-to-image`
+
+---
+
 ## 2026-05-21 — 날짜별 flights 캐싱으로 AI 추천 문구 꼬임 수정
 
 **파일**: `frontend/src/components/FareManagement.tsx`

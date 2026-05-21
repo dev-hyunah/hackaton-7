@@ -1,5 +1,29 @@
 # AI-DLC Audit Log
 
+## [backend-500-fix] Debug — HTTP 500 인벤토리 확정 API 해결
+**Timestamp**: 2026-05-22T06:01:00Z
+**User Input**: "인벤토리 실시간 통제 확정을 누르면 여전히 HTTP 500: Internal Server Error 오류가 나."
+**AI Response**: "근본 원인: 기존 서버 프로세스(PID 51273)가 DB 시딩 전에 기동된 상태로 잘못된 컨텍스트에서 실행 중이었음. database.py DB 경로(sqlite:///./rm_system.db)는 정상, seed 데이터도 정상(flights 4050건 확인). fare.py 라우터에 상세 예외 핸들러 추가 후 서버 재기동 시 PUT /fares/38ef2b87 → 200 OK 정상 동작 확인. 임시 디버그 handler 제거 후 검증 완료."
+**Context**: DEBUG - 백엔드 서버 프로세스 재기동으로 500 에러 해소
+
+---
+
+## [inventory-control-fix] Construction — 인벤토리 통제 로직 3가지 수정
+**Timestamp**: 2026-05-21T23:00:00Z
+**User Input**: "1. sold out은 가격은 수정하면 안되지만 좌석수는 수정 가능해야 해, 2. 지금 특정 등급 좌석 수를 늘릴때 각 등급의 좌석수의 합이 전체 좌석 수보다 커져도 늘어나는데 이 것은 오류를 띄우면서 제어를 해야 되. 3. 인벤토리 통제 확정 버튼을 누르면 500에러가 나는데 해당 항공편의 현재 좌석수와 AI 추천 운임으로 운임이 확정이 되어야 하는 것 같아."
+**AI Response**: "1. Sold Out 가격/좌석 잠금 재확인: 코드 검증 결과 현재 priceLocked=isClosed||isSoldOut으로 가격은 잠금, canEditSeats=isSoldOut||!seatsLocked로 좌석 증가는 허용 중 — 이미 올바르게 동작 중. 2. aiReallocateSeats에 pool < eligibleMinSum 검증 추가: 좌석 증가 시 eligible 등급 minSeats(판매석) 합산이 pool을 초과하면 '전체 좌석 수를 초과합니다' 에러 반환. 3. handleConfirmInventory 수정: new_price를 cls.price → cls.aiPrice(AI추천가)로 변경, 성공 시 로컬 flights 상태도 price=aiPrice로 갱신(setFlightsAndSync), confirmedClasses/appliedFlights에 전체 클래스 추가. 확정 버튼도 hasPendingAi 조건 제거 — 항상 표시."
+**Context**: CONSTRUCTION PHASE - Bug Fix (인벤토리 통제 로직)
+
+---
+
+## [docs-update-2026-05-21] Documentation — README/설계서/아키텍처 최신화
+**Timestamp**: 2026-05-21T22:30:00Z
+**User Input**: "readme.md 파일들도 최신화가 필요하면 최신화 시켜주고, 모든 개발 관련 문서들을 참고해서 애플리케이션 설계서 (/aidlc-docs/design/application-design-document.md)와 아키텍처 설계서(/aidlc-docs/design/architecture-design-document.md)를 최신화 해줘."
+**AI Response**: "frontend/README.md: 전역 새로고침 섹션의 key=refreshKey 설명 → CSS hidden 방식 설명으로 교체, html2canvas → html-to-image 업데이트, AiRecommendations가 별도 탭이 아닌 FareManagement 내부 임베드임을 명시. application-design-document.md: 노선 9→8개, 기종 단일→3종 AIRCRAFT_CONFIG, flightsStore 추가, AiRecommendations 별도 페이지 항목 제거, FareManagement에 routeDateCache/appliedFlights/날짜별 상태 격리 내용 추가, Zustand stores 표에 flightsStore 추가, 라우팅 표에서 /recommendations 제거, 탭 CSS hidden 방식 명시, 탄력성 계수 -0.6/-1.2/-1.5/-2.0 → -0.45/-0.95/-1.35/-1.75, html2canvas → html-to-image. architecture-design-document.md: ADR-005 CSS hidden 탭 렌더링 추가, 컴포넌트 계층도에서 AiRecommendations 탭 제거, flightsStore 레이어에 추가, FareManagement↔Dashboard 연동 시나리오 4 추가, 탄력성 계수 수정, html2canvas→html-to-image."
+**Context**: DOCUMENTATION - 세션 중 버그 수정 및 기능 추가 내역을 설계 문서에 반영
+
+---
+
 ## [route-date-cache] Construction — 날짜별 flights 캐싱으로 AI 추천 문구 꼬임 수정
 **Timestamp**: 2026-05-21T21:30:00Z
 **User Input**: "날짜를 이동하다가 보면 AI 추천에 나오는 '유지', 가격을 올리세요 등의 문구 표출 로직이 꼬이는 것 같아. 5/22일에 KE1201편의 AI추천이 유지였고, 5/23일로 날짜를 바꿔서 KE1201편의 AI추천이 가격을 올리세요라고 되어있는 것을 보고 다시 5/22일 KE1201편을 보면 가격을 올리세요 라고 나와."

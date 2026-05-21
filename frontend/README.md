@@ -11,14 +11,14 @@ EMSRb 알고리즘으로 산출된 좌석 인벤토리 데이터를 시각화하
 |------|------|------|
 | React | 19 | UI 프레임워크 |
 | TypeScript | 6 | 타입 안전성 |
-| Vite | 8 | 빌드 도구 / 개발 서버 |
+| Vite | 6+ | 빌드 도구 / 개발 서버 |
 | Tailwind CSS | 4 | 유틸리티 기반 스타일링 |
 | Zustand | 5 | 전역 상태 관리 (노선별 flights 실시간 공유) |
 | Recharts | 3 | 차트 및 데이터 시각화 |
 | Lucide React | 1.16 | 아이콘 |
 | jsPDF | 4 | 보고서 PDF 내보내기 |
+| html-to-image | 1.11 | 화면 캡처 (보고서 이미지, oklch 색상 호환) |
 | docx | 9 | 보고서 DOCX 내보내기 |
-| html2canvas | 1 | 화면 캡처 (보고서 이미지) |
 
 ---
 
@@ -34,7 +34,7 @@ src/
 │   ├── CompetitorMonitor.tsx  # 경쟁사 모니터링
 │   ├── Simulator.tsx          # 시나리오 시뮬레이터 (수요 탄력성 기반)
 │   ├── Report.tsx             # 수익 보고서 (PDF/DOCX 내보내기)
-│   └── AiRecommendations.tsx  # AI 추천 목록
+│   └── AiRecommendations.tsx  # AI 추천 목록 (FareManagement 내부에서 임베드)
 ├── stores/
 │   ├── flightsStore.ts        # 노선별 DashboardFlight 공유 (운임관리 ↔ 대시보드 연동)
 │   ├── dashboardStore.ts
@@ -116,10 +116,15 @@ const liveStats = useMemo(() => {
 
 우측 상단 🔄 버튼은 `refreshKey`를 증가시켜 모든 탭에 전파합니다.
 
-- `<Dashboard key={refreshKey} />` — 완전 리마운트
-- `<FareManagement refreshKey={refreshKey} />` — useEffect로 재시뮬레이션
+모든 탭 컴포넌트는 항상 마운트된 상태로 유지되며(CSS `hidden` 방식), 탭 전환 시 내부 상태가 보존됩니다.
+
+- `<Dashboard refreshKey={refreshKey} />` — useEffect로 데이터 재조회
+- `<FareManagement refreshKey={refreshKey} />` — useEffect로 재시뮬레이션, `appliedFlights`/`confirmedClasses`/`routeDateCache` 초기화
 - `<CompetitorMonitor refreshKey={refreshKey} />` — 데이터 재조회
-- `<Simulator key={refreshKey} />`, `<Report key={refreshKey} />` — 완전 리마운트
+- `<Simulator />` — 내부 상태 유지 (refreshKey 미전달)
+- `<Report />` — 내부 상태 유지 (refreshKey 미전달)
+
+**CSS hidden 방식**: App.tsx에서 각 탭을 `className={active ? "" : "hidden"}`으로 show/hide — 언마운트 없이 상태 보존.
 
 ---
 

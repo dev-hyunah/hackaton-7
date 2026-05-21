@@ -215,6 +215,15 @@ function aiReallocateSeats(
   const totalSeats = classes.reduce((s, c) => s + c.seats, 0);
   const pool = totalSeats - fixedSeats;
 
+  // eligible 등급의 minSeats(판매석) 합 확인 — pool이 이보다 작으면 총합 불변 원칙 위반
+  const eligibleMinSum = eligible.reduce((s, { c }) => s + c.sold, 0);
+  if (pool < eligibleMinSum) {
+    return {
+      classes,
+      error: `좌석 변경 불가: 전체 좌석 수(${totalSeats}석)를 초과합니다. 다른 등급의 좌석을 먼저 줄여주세요.`,
+    };
+  }
+
   if (pool <= 0) {
     return { classes, error: "재배분 가능한 잔여 좌석이 없습니다." };
   }
@@ -1080,11 +1089,18 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
     setConfirmLoading(true);
     setConfirmError(null);
     let hasError = false;
+
+    // AI 추천이 있는 클래스는 aiPrice로, 없으면 현재 price 그대로 확정
+    const classesToSave = selectedFlight.classes.map((cls) => ({
+      code: cls.code,
+      price: cls.aiPrice !== cls.price ? cls.aiPrice : cls.price,
+    }));
+
     try {
-      for (const cls of selectedFlight.classes) {
+      for (const { code, price } of classesToSave) {
         await apiClient.put(`/fares/${selectedFlight.id}`, {
-          class_code: cls.code,
-          new_price: cls.price,
+          class_code: code,
+          new_price: price,
           updated_by: "Revenue Manager",
         });
       }
@@ -1099,17 +1115,39 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
     } finally {
       setConfirmLoading(false);
     }
+
     if (!hasError) {
-      // 확정 시 미처리 AI 추천 영역만 조용히 숨김 (배지 없음)
+      // 로컬 상태: price를 aiPrice로 덮어쓰고 aiPrice도 동기화
+      const updatedFlights = flights.map((f) => {
+        if (f.id !== selectedFlight.id) return f;
+        const newClasses = f.classes.map((cls) => {
+          const confirmed = classesToSave.find((c) => c.code === cls.code);
+          if (!confirmed) return cls;
+          return { ...cls, price: confirmed.price, aiPrice: confirmed.price };
+        });
+        const yClass = newClasses.find((c) => c.code === "Y");
+        return {
+          ...f,
+          classes: newClasses,
+          currentPrice: yClass?.price ?? f.currentPrice,
+          aiRecommended: yClass?.price ?? f.aiRecommended,
+        };
+      });
+      setFlightsAndSync(updatedFlights);
+      syncSelected(updatedFlights);
+
+      // 확정한 클래스 전부 confirmedClasses에 추가
       setConfirmedClasses((prev) => {
         const next = new Set(prev);
         for (const cls of selectedFlight.classes) {
-          if (cls.aiPrice !== cls.price) {
-            next.add(`${selectedDate}:${selectedFlight.id}-${cls.code}`);
-          }
+          next.add(`${selectedDate}:${selectedFlight.id}-${cls.code}`);
         }
         return next;
       });
+      // appliedFlights에도 추가 → Step1 목록에 "적용 완료" 표시
+      setAppliedFlights((prev) =>
+        new Set(prev).add(`${selectedDate}:${selectedFlight.id}`),
+      );
       setConfirmDone(true);
       setTimeout(() => setConfirmDone(false), 2500);
     }
@@ -2189,8 +2227,7 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
                       </div>
                     )}
                   </div>
-                  {hasPendingAi && (
-                    <button
+                  <button
                       data-testid="confirm-inventory-btn"
                       onClick={handleConfirmInventory}
                       disabled={confirmLoading}
@@ -2226,7 +2263,6 @@ export default function FareManagement({ refreshKey }: { refreshKey?: number }) 
                         </>
                       )}
                     </button>
-                  )}
                 </div>
 
                 {/* AI 전략 분석 요청 */}
