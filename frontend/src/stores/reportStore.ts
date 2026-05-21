@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { revenueHistory } from '../data/mockData';
 import type { ReportDTO, ReportStatus } from '../types';
 
 // 전 노선 성과 데이터 (필터링 기준)
@@ -30,10 +29,30 @@ const YIELD_BY_MONTH: Record<number, { yield: number; target: number }> = {
   12: { yield: 90, target: 88 },
 };
 
-// "5/8" 형식의 date 문자열을 Date 객체로 변환 (연도 2026 고정)
-function parseHistoryDate(d: string): Date {
-  const [m, day] = d.split('/');
-  return new Date(2026, parseInt(m) - 1, parseInt(day));
+// 기간 내 일별 수익 mock 생성 (필터 기간에 정확히 맞는 데이터)
+function generateDailyRevenue(
+  start: string,
+  end: string,
+  baseDaily: number,
+): { date: string; revenue: number; bookings: number }[] {
+  const result: { date: string; revenue: number; bookings: number }[] = [];
+  const s = new Date(start);
+  const e = new Date(end);
+  const cur = new Date(s);
+  let seed = s.getTime();
+  const rng = () => { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0x100000000; };
+  while (cur <= e) {
+    const noise = 0.75 + rng() * 0.5;
+    const revenue = Math.round(baseDaily * noise);
+    const bookings = Math.round(revenue / 105_000 * (0.9 + rng() * 0.2));
+    result.push({
+      date: `${cur.getMonth() + 1}/${cur.getDate()}`,
+      revenue,
+      bookings: Math.max(1, bookings),
+    });
+    cur.setDate(cur.getDate() + 1);
+  }
+  return result;
 }
 
 // 기간에 포함되는 월 목록 반환
@@ -101,15 +120,9 @@ export const useReportStore = create<ReportStore>((set, get) => ({
       ...(YIELD_BY_MONTH[m] ?? { yield: 80, target: 80 }),
     }));
 
-    // 기간 내 일별 수익 필터링
-    const startDate = new Date(start);
-    const endDate   = new Date(end);
-    const filteredHistory = revenueHistory.filter((d) => {
-      const dt = parseHistoryDate(d.date);
-      return dt >= startDate && dt <= endDate;
-    });
-    // 필터 결과가 없으면 전체 표시 (mock 데이터 범위 벗어난 경우)
-    const historyToShow = filteredHistory.length > 0 ? filteredHistory : revenueHistory;
+    // 기간 내 일별 수익 — 필터 기간에 정확히 맞는 데이터 동적 생성
+    const baseDaily = Math.round(totalRevenue / Math.max(1, (new Date(end).getTime() - new Date(start).getTime()) / 86_400_000));
+    const historyToShow = generateDailyRevenue(start, end, baseDaily);
 
     set({
       reportData: {

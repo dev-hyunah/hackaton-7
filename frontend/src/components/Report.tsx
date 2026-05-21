@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, Legend,
 } from "recharts";
 import { FileText, Download, TrendingUp, Target, Award, RefreshCw } from "lucide-react";
 import { useReportStore } from "../stores/reportStore";
@@ -137,6 +137,7 @@ export default function Report() {
                     <XAxis dataKey="route" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={(v) => `${(Number(v) / 1_000_000).toFixed(0)}M`} tick={{ fontSize: 11 }} width={45} />
                     <Tooltip formatter={(v) => [`${Number(v).toLocaleString()}원`]} />
+                    <Legend />
                     <Bar dataKey="target" name="목표" fill="#e2e8f0" radius={[3, 3, 0, 0]} />
                     <Bar dataKey="revenue" name="실적" radius={[3, 3, 0, 0]}>
                       {reportData.routePerformance.map((r, i) => (
@@ -171,12 +172,13 @@ export default function Report() {
                 <h4 className="text-base font-bold text-gray-700 border-b border-gray-100 pb-2 mb-4 flex items-center gap-2">
                   <TrendingUp size={16} className="text-violet-600" />월별 Yield 추이
                 </h4>
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={reportData.yieldTrend}>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={reportData.yieldTrend} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                    <YAxis domain={[60, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
+                    <YAxis domain={[55, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} width={40} />
                     <Tooltip formatter={(v) => [`${v}%`]} />
+                    <Legend />
                     <Bar dataKey="target" name="목표 Yield" fill="#e2e8f0" radius={[3, 3, 0, 0]} />
                     <Bar dataKey="yield" name="실제 Yield" fill="#7c3aed" radius={[3, 3, 0, 0]} />
                   </BarChart>
@@ -208,7 +210,7 @@ export default function Report() {
 
               {/* Recent daily revenue */}
               <section>
-                <h4 className="text-base font-bold text-gray-700 border-b border-gray-100 pb-2 mb-4">최근 8일 일별 수익</h4>
+                <h4 className="text-base font-bold text-gray-700 border-b border-gray-100 pb-2 mb-4">{reportData.periodStart} ~ {reportData.periodEnd} 일별 수익</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>

@@ -1,5 +1,101 @@
 # AI-DLC Audit Log
 
+## [v6-추가요구] Requirements Analysis — v6 추가 요구사항 문서 반영
+**Timestamp**: 2026-05-21T13:00:00Z
+**User Input**: "여기서 추가로 말한 요구사항들을 requirement_delta_v6.md에 추가해주고, requirement_delta_v6.md 내용을 전체수정사항(requirements.md)에도 반영 반영해줘. 그리고 변경이력을 모두 changelog.md와 audit.md에 기록해줘."
+**AI Response**: "이번 대화의 추가 요구사항 3건을 requirements_delta_v6.md에 추가, requirements.md FR-01·FR-06 반영, changelog.md·audit.md 기록 완료."
+**Context**: INCEPTION PHASE - Requirements Analysis (v6 추가 요구사항 문서화)
+
+### 이번 대화에서 도출된 추가 요구사항
+1. **운임 관리 — 공급석 input 너비 개선**: 3자리 초과 숫자가 잘리지 않도록 자릿수 비례 너비 확보 (기존 요구사항 보완)
+2. **시뮬레이터 — 노선 변경 시 슬라이더·결과 유지**: 노선 버튼 클릭 시 슬라이더 값·시뮬레이션 결과 초기화 없이 유지
+3. **시뮬레이터 — 초기화 버튼 완전 초기화**: '초기화' 버튼만 모든 값(노선 포함) 초기화, 노선은 '국내선 전체'로 복귀
+
+### 문서 변경
+- `requirements_delta_v6.md`: 시뮬레이터 섹션에 2건, 운임 관리 섹션에 1건 추가
+- `requirements.md`: FR-01 좌석 input 너비 명세 상세화, FR-06 슬라이더 유지·초기화 동작 명세 추가
+
+---
+
+## [버그수정-2] Construction — 시뮬레이터 슬라이더 초기화 버그 수정
+**Timestamp**: 2026-05-21T12:00:00Z
+**User Input**: "시뮬레이터 탭에서 노선 선택하고 '유가변동', '환율 변동' 등 슬라이더 이동했을 때 초기화되지 않도록 수정해줘 '초기화' 버튼을 눌렀을 때만 선택한 값들이 초기화되도록만 수정하면 돼 초기화 버튼 클릭시 노선 선택도 '국내선 전체'가 선택되도록 수정해줘"
+**AI Response**: "노선 버튼 onClick에서 reset() 제거. reset()은 defaultParams 전체 초기화(route 포함)로 복원."
+**Context**: CONSTRUCTION PHASE - Bug Fix
+
+### 원인
+이전 버그 수정(v6-1차)에서 노선 버튼 onClick에 `reset()`을 호출하여 슬라이더 값이 노선 변경 시마다 초기화됨.
+
+### 수정
+- `Simulator.tsx`: 노선 버튼 onClick에서 `reset()` 호출 제거 — `setParams({ route: r })` 만 실행
+- `simulationStore.ts`: `reset()` 함수를 `params: { ...defaultParams }` 전체 초기화로 복원 (route 포함 초기화)
+
+결과: 노선 변경 시 슬라이더·결과 유지, '초기화' 버튼만 전체(route 포함) 초기화
+
+---
+
+## [버그수정] Construction — 시뮬레이터 노선 선택 버그 수정
+**Timestamp**: 2026-05-21T11:00:00Z
+**User Input**: "시뮬레이터 탭에서 '노선 선택'이 '국내선 전체' 밖에 안되는데 다른 옵션들도 선택 가능하도록 오류 해결해줘 꼭 ai-dlc 방법론으로 수정해줘"
+**AI Response**: "simulationStore.ts의 reset() 함수가 defaultParams 전체를 덮어써서 route도 초기화되는 버그 수정. reset() 호출 시 현재 route를 유지하도록 수정. changelog.md, audit.md 기록 추가."
+**Context**: CONSTRUCTION PHASE - Bug Fix
+
+### 원인
+`Simulator.tsx`의 노선 버튼 onClick: `setParams({ route: r }); reset();`
+→ `reset()`이 `params: { ...defaultParams }`로 전체 덮어쓰면서 방금 설정한 route가 `국내선 전체`로 초기화됨
+
+### 수정
+`simulationStore.ts` `reset()` 함수에서 현재 route를 보존하도록 변경:
+```ts
+// 변경 전
+set({ params: { ...defaultParams }, result: null, isRunning: false });
+// 변경 후
+set((state) => ({ params: { ...defaultParams, route: state.params.route }, result: null, isRunning: false }));
+```
+
+---
+
+## [v6-2차] Construction — v6 미구현 항목 코드 구현 완료
+**Timestamp**: 2026-05-21T10:00:00Z
+**User Input**: "requirement_delta_v6.md 내용에서 수정을 진행하지 않는 요구사항들에 대해 aidlc 방법론에 맞게 코드 수정을 진행해주고, 전체수정사항(requirements.md)에도 반영 반영해줘. 그리고 추가 변경이력을 changelog.md와 audit.md에 기록해줘."
+**AI Response**: "v6 미구현 항목 7건 코드 구현 완료. requirements.md FR-01/FR-04/FR-06/FR-08 업데이트. changelog.md·audit.md 2차 기록 추가."
+**Context**: CONSTRUCTION PHASE - Code Generation (v6 2차 구현)
+
+### 구현 항목
+1. **FareManagement — LF bar 굵기 2배**: `h-1.5 → h-3` (`FareManagement.tsx:1561`)
+2. **FareManagement — 좌석 input 동적 너비**: 자릿수 기반 `style.width` 동적 계산 (`FareManagement.tsx:1581`)
+3. **Simulator — 결과 카드 콤마**: 예상 수익·예상 일일 예약에 `toLocaleString()` 적용 (`Simulator.tsx`)
+4. **Dashboard — 수익 KPI 콤마**: `fmt()` 함수 만원 단위에 `toLocaleString()` 적용 (`Dashboard.tsx`)
+5. **Report — Yield 막대 그래프**: `LineChart → BarChart` 재변경, 목표·실제 병렬 막대 (`Report.tsx`)
+6. **Report — 일별 수익 동적 생성**: `generateDailyRevenue()` 신규 함수로 기간 내 날짜 전체 동적 생성 (`reportStore.ts`)
+7. **미사용 import 정리**: `revenueHistory`, `LineChart`, `Line` 제거
+
+### 문서 업데이트
+- `requirements.md`: FR-01(LF bar·input 너비), FR-04(수익 콤마), FR-06(결과 콤마), FR-08(동적 일별 수익·Yield 막대) 추가
+- `changelog.md`: 2026-05-21 v6 2차 구현 섹션 추가
+
+---
+
+## [v6] Requirements Analysis — v6 요구사항 통합 완료
+**Timestamp**: 2026-05-21T00:00:00Z
+**User Input**: "requirement_delta_v6.md를 참고해서 꼭 aidlc 방법론에 맞게 수정을 진행해줘. requirement_delta_v6.md 내용을 전체수정사항(requirements.md)에도 반영 반영해줘. 그리고 변경이력을 모두 changelog.md와 audit.md에 기록해줘."
+**AI Response**: "requirements_delta_v6.md 분석 및 requirements.md 통합 완료. changelog.md에 v6 변경이력 추가. audit.md에 세션 기록 추가."
+**Context**: INCEPTION PHASE - Requirements Analysis (v6 델타 통합)
+
+### 변경 내용 요약
+- `aidlc-docs/inception/requirements/requirements.md`
+  - 관리 정책 헤더: v6 통합 기준 명시
+  - FR-01 운임 관리: 노선 선택 제한, 새로고침 시간 표출, 헤더 항목 제거, 날짜 형식, 좌석 UI 개선, L/F 바 개선 추가
+  - FR-04 실시간 대시보드: 노선별 수익 데이터 연동, 일자 필터링 KPI 연동 추가
+  - FR-06 시뮬레이션 모듈: 국내선 전체 옵션 및 노선별 데이터 연동 추가
+  - FR-08 보고서: 기간 필터링 기반 일별 수익, 그래프 형태 최적화 추가
+  - NFR-06 반응형: 모바일 화면 정합성 보강
+  - NFR-07 금액 표기: 신규 추가 (1,000 단위 콤마)
+  - 변경 이력 테이블: v6 항목 추가
+- `aidlc-docs/changelog.md`: 2026-05-21 v6 요구사항 반영 섹션 추가
+
+---
+
 ## [v5] Code Generation Plan — v5-changes 플랜 작성 완료
 **Timestamp**: 2026-05-20T01:45:00Z
 **User Input**: "승인 후 진행해줘"

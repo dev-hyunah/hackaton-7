@@ -4,6 +4,111 @@
 
 ---
 
+## 2026-05-21 — v6 추가 요구사항 문서 반영
+
+**파일**: `aidlc-docs/inception/requirements/requirements_delta_v6.md`, `aidlc-docs/inception/requirements/requirements.md`
+
+### requirements_delta_v6.md 추가 항목
+
+#### 운임 관리
+- 공급석 input 표출 시 숫자 3자리 초과해도 숫자가 잘리지 않도록 input 너비를 자릿수에 맞게 충분히 확보 (기존 동적 너비 요구사항 보완)
+
+#### 시뮬레이터
+- 노선 선택 변경 시 슬라이더(유가 변동·환율 변동·자사 운임 조정) 값과 시뮬레이션 결과 유지
+- '초기화' 버튼 클릭 시에만 노선 포함 모든 값 초기화 (노선은 '국내선 전체'로 복귀)
+
+### requirements.md 반영
+- FR-01: 좌석 input 동적 너비 명세 상세화 (계수 공식, 3자리 초과 시 온전히 표시 조건 명시)
+- FR-06: 노선 변경 시 슬라이더·결과 유지 명세, 초기화 버튼 완전 초기화 명세 추가
+
+---
+
+## 2026-05-21 — 시뮬레이터 슬라이더 초기화 버그 수정
+
+**파일**: `frontend/src/components/Simulator.tsx`, `frontend/src/stores/simulationStore.ts`
+
+### 수정 내용
+- `Simulator.tsx`: 노선 버튼 onClick에서 `reset()` 제거 — 노선 변경 시 슬라이더·결과값 유지
+- `simulationStore.ts`: `reset()` 함수를 `defaultParams` 전체 초기화(route 포함)로 복원 — '초기화' 버튼 클릭 시만 모든 값(노선 포함) 초기화
+
+---
+
+## 2026-05-21 — 시뮬레이터 노선 선택 버그 수정
+
+**파일**: `frontend/src/stores/simulationStore.ts`
+
+### 버그 원인
+노선 버튼 클릭 시 `setParams({ route: r }); reset();` 순서로 실행되는데, `reset()`이 `{ ...defaultParams }` 전체를 덮어써서 직전에 설정한 route가 `국내선 전체`로 되돌아가는 문제.
+
+### 수정 내용
+`reset()` 함수에서 현재 `state.params.route`를 보존하도록 수정:
+- `params: { ...defaultParams }` → `params: { ...defaultParams, route: state.params.route }`
+- result, isRunning은 기존과 동일하게 초기화
+
+---
+
+## 2026-05-21 — v6 미구현 항목 추가 코드 반영 (2차)
+
+**파일**: `frontend/src/components/FareManagement.tsx`, `frontend/src/components/Simulator.tsx`, `frontend/src/components/Dashboard.tsx`, `frontend/src/components/Report.tsx`, `frontend/src/stores/reportStore.ts`
+
+### 코드 구현
+
+#### 운임 관리 (FareManagement.tsx)
+- **L/F progress bar 굵기 2배**: ClassEditCard 판매율 바 `h-1.5 → h-3`으로 변경하여 가시성 향상
+- **좌석 input 동적 너비**: 좌석 수 수정 input에 `style={{ width: ... }}` 동적 계산 적용 — 입력 자릿수에 따라 너비 자동 확장 (최소 3.5rem, 글자당 0.7rem 증가)
+
+#### 시뮬레이터 (Simulator.tsx)
+- **수익·예약 콤마 포맷**: '예상 수익 (일평균)' 및 '예상 일일 예약' ResultCard에 `toLocaleString()` 적용하여 1,000 단위 콤마 삽입
+
+#### 대시보드 (Dashboard.tsx)
+- **수익 KPI 콤마 포맷**: `fmt()` 함수의 만원 단위 계산에 `toLocaleString()` 적용하여 큰 숫자(예: 2,841만)에도 콤마 표시
+
+#### 보고서 (Report.tsx, reportStore.ts)
+- **월별 Yield 추이 막대 그래프**: `LineChart → BarChart` 재변경 — 목표 Yield(gray), 실제 Yield(violet) 병렬 막대로 가시성 향상
+- **일별 수익 동적 생성**: `generateDailyRevenue()` 함수 신규 추가 — 기간 시작~종료 전체 날짜에 걸쳐 일별 수익 데이터를 동적 생성. 기간에 포함되지 않는 데이터 표출 없음
+- **미사용 import 정리**: `revenueHistory` import 제거, `LineChart`/`Line` import 제거
+
+### 요구사항 문서 업데이트 (requirements.md)
+- FR-01: L/F bar 굵기 2배 명세 + 좌석 input 동적 너비 명세 추가
+- FR-04: 수익 KPI 콤마 표기 명세 추가
+- FR-06: 결과 카드 콤마 표기 명세 추가
+- FR-08: 일별 수익 동적 생성 및 기간 내 데이터만 표출 명세 상세화, Yield 막대 그래프 명세 업데이트
+
+---
+
+## 2026-05-21 — v6 요구사항 반영 (requirements_delta_v6.md)
+
+**파일**: `aidlc-docs/inception/requirements/requirements_delta_v6.md`, `aidlc-docs/inception/requirements/requirements.md`
+
+### 요구사항 통합 (requirements_delta_v6.md → requirements.md)
+
+#### 전체 (Global)
+- **노선 선택 제한**: 실제 대한항공 국내선 운항 노선만 선택 가능 (미운항 노선 선택 불가) — FR-01에 반영
+- **금액 콤마 표기**: 1,000 단위마다 콤마 삽입하여 가독성 향상 — NFR-07 신규 추가
+- **모바일 반응형 강화**: 모바일 화면 및 텍스트 영역이 깨지지 않도록 반응형 구현 — NFR-06 보강
+
+#### 대시보드 (FR-04)
+- **노선별 수익 추이 데이터 연동**: 노선 변경 시 수익 추이 그래프 데이터가 해당 노선 기준으로 변동
+- **일자 필터링 KPI 연동**: 1일/3일/7일/10일 필터 변경 시 '평균 Load Factor', 'AI 승인 대기' 등 KPI 데이터 변동
+
+#### 운임 관리 (FR-01)
+- **새로고침 마지막 시간 표출**: 새로고침 버튼 옆에 마지막 새로고침 시간 초 단위까지 표출
+- **헤더 항공편명·출발시간 제거**: 새로고침 버튼 우측 항공편명·출발 시간 UI 제거
+- **운항편 판매현황 하단 데이터 제거**: 좌측 운항편 판매현황 하단 기체·노선 정보 표출 제거
+- **상세 페이지 날짜 추가**: Step 2 헤더에 DDMMM 형태 날짜 추가 (예: KE1207 09:30(오전) B737-800 21MAY)
+- **좌석 공급석 수정 UI 개선**: 사용자 친화적으로 눈에 띄고 편리한 UI로 재설계
+- **L/F progress bar 굵기 개선**: 더 굵게 수정하여 가시성 향상
+
+#### 시뮬레이터 (FR-06)
+- **국내선 전체 옵션 추가**: 노선 선택에 '국내선 전체' 옵션 추가, 기본값으로 설정
+- **노선별 데이터 연동**: 노선 변경 시 '예상 수익', '예상 Load Factor', '예상 일일 예약' 등 데이터 변동
+
+#### 보고서 (FR-08)
+- **기간 필터링 기반 일별 수익**: 기간 필터 기준 날짜별 일별 수익 표출 ('최근 8일' 하드코딩 제거)
+- **그래프 형태 최적화**: '노선별 수익 달성률', '월별 Yield 추이' 그래프를 데이터 특성에 맞는 형태로 변경
+
+---
+
 ## 2026-05-19 — 기내 좌석 배치도 좌석 크기·간격 확대 및 특가 구역 전체 표시
 
 **파일**: `frontend/src/components/FareManagement.tsx`

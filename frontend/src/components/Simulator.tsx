@@ -3,22 +3,31 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine, Legend,
 } from "recharts";
 import { FlaskConical, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
-import { useSimulationStore } from "../stores/simulationStore";
-import { KE_DOMESTIC_ROUTES } from "../data/mockData";
+import { useSimulationStore, SIMULATOR_ROUTES } from "../stores/simulationStore";
 
-const BASE_REVENUE = 54_000_000;
-const BASE_LF = 72;
-const BASE_DEMAND = 520;
+// 노선별 기준값 (미리보기용 — store와 동기화)
+const ROUTE_BASE_UI: Record<string, { revenue: number; lf: number; demand: number }> = {
+  "국내선 전체": { revenue: 54_000_000, lf: 72, demand: 520 },
+  "GMP-CJU":    { revenue: 18_200_000, lf: 79, demand: 176 },
+  "GMP-PUS":    { revenue: 11_400_000, lf: 62, demand: 110 },
+  "ICN-CJU":    { revenue: 16_800_000, lf: 86, demand: 162 },
+  "GMP-TAE":    { revenue:  4_300_000, lf: 48, demand:  41 },
+  "GMP-KWJ":    { revenue:  3_600_000, lf: 52, demand:  35 },
+  "ICN-PUS":    { revenue:  8_900_000, lf: 61, demand:  86 },
+  "GMP-KPO":    { revenue:  3_200_000, lf: 55, demand:  31 },
+  "GMP-RSU":    { revenue:  2_800_000, lf: 49, demand:  27 },
+};
 
 export default function Simulator() {
   const { params, result, isRunning, setParams, runSimulation, reset } = useSimulationStore();
 
-  const previewRevenue = BASE_REVENUE * (1 + (result?.expectedRevenueChange ?? 0) / 100);
-  const previewLf = BASE_LF + (result?.expectedDemandChange ?? 0) * 0.8;
-  const previewDemand = BASE_DEMAND * (1 + (result?.expectedDemandChange ?? 0) / 100);
-  const revDiff = Math.round(previewRevenue - BASE_REVENUE);
-  const lfDiff = Math.round(previewLf - BASE_LF);
-  const demandDiff = Math.round(previewDemand - BASE_DEMAND);
+  const base = ROUTE_BASE_UI[params.route] ?? ROUTE_BASE_UI["국내선 전체"];
+  const previewRevenue = base.revenue * (1 + (result?.expectedRevenueChange ?? 0) / 100);
+  const previewLf = base.lf + (result?.expectedDemandChange ?? 0) * 0.8;
+  const previewDemand = base.demand * (1 + (result?.expectedDemandChange ?? 0) / 100);
+  const revDiff = Math.round(previewRevenue - base.revenue);
+  const lfDiff = Math.round(previewLf - base.lf);
+  const demandDiff = Math.round(previewDemand - base.demand);
 
   return (
     <div className="space-y-6" data-testid="simulator-page">
@@ -36,7 +45,7 @@ export default function Simulator() {
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
         <div className="text-sm font-semibold text-gray-600 mb-2">노선 선택</div>
         <div className="flex flex-wrap gap-2" data-testid="route-selector">
-          {KE_DOMESTIC_ROUTES.map((r) => (
+          {SIMULATOR_ROUTES.map((r) => (
             <button
               key={r}
               data-testid={`route-btn-${r}`}
@@ -117,22 +126,22 @@ export default function Simulator() {
       <div className="grid grid-cols-3 gap-4" data-testid="result-preview">
         <ResultCard
           label="예상 수익 (일평균)"
-          base={`${(BASE_REVENUE / 10000).toFixed(0)}만원`}
-          predicted={`${(previewRevenue / 10000).toFixed(0)}만원`}
+          base={`${Math.round(base.revenue / 10000).toLocaleString()}만원`}
+          predicted={`${Math.round(previewRevenue / 10000).toLocaleString()}만원`}
           diff={revDiff}
           unit="원"
         />
         <ResultCard
           label="예상 Load Factor"
-          base={`${BASE_LF}%`}
+          base={`${base.lf}%`}
           predicted={`${Math.min(100, Math.max(0, Math.round(previewLf)))}%`}
           diff={lfDiff}
           unit="%p"
         />
         <ResultCard
           label="예상 일일 예약"
-          base={`${BASE_DEMAND}건`}
-          predicted={`${Math.max(0, Math.round(previewDemand))}건`}
+          base={`${base.demand.toLocaleString()}건`}
+          predicted={`${Math.max(0, Math.round(previewDemand)).toLocaleString()}건`}
           diff={demandDiff}
           unit="건"
         />
@@ -184,7 +193,7 @@ export default function Simulator() {
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(v) => [`${v}%`, "Load Factor"]} />
-                <ReferenceLine y={BASE_LF} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: "기준", position: "right", fontSize: 11 }} />
+                <ReferenceLine y={base.lf} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: "기준", position: "right", fontSize: 11 }} />
                 <Line type="monotone" dataKey="lf" stroke="#7c3aed" strokeWidth={2.5} dot={{ r: 4 }} name="예상 LF" />
               </LineChart>
             </ResponsiveContainer>

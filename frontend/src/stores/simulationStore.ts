@@ -2,22 +2,33 @@ import { create } from 'zustand';
 import { KE_DOMESTIC_ROUTES } from '../data/mockData';
 import type { SimulationParamsDTO, SimulationResultDTO } from '../types';
 
-const BASE_REVENUE = 54_000_000;
-const BASE_LF = 72;
-const BASE_DEMAND = 520;
+export const SIMULATOR_ROUTES = ["국내선 전체", ...KE_DOMESTIC_ROUTES];
 
-function calcImpact(oilDelta: number, exchangeDelta: number, priceDelta: number) {
+// 노선별 기준 데이터
+const ROUTE_BASE: Record<string, { revenue: number; lf: number; demand: number }> = {
+  "국내선 전체": { revenue: 54_000_000, lf: 72, demand: 520 },
+  "GMP-CJU":    { revenue: 18_200_000, lf: 79, demand: 176 },
+  "GMP-PUS":    { revenue: 11_400_000, lf: 62, demand: 110 },
+  "ICN-CJU":    { revenue: 16_800_000, lf: 86, demand: 162 },
+  "GMP-TAE":    { revenue:  4_300_000, lf: 48, demand:  41 },
+  "GMP-KWJ":    { revenue:  3_600_000, lf: 52, demand:  35 },
+  "ICN-PUS":    { revenue:  8_900_000, lf: 61, demand:  86 },
+  "GMP-KPO":    { revenue:  3_200_000, lf: 55, demand:  31 },
+  "GMP-RSU":    { revenue:  2_800_000, lf: 49, demand:  27 },
+};
+
+function calcImpact(route: string, oilDelta: number, exchangeDelta: number, priceDelta: number) {
+  const base = ROUTE_BASE[route] ?? ROUTE_BASE["국내선 전체"];
   const oilEffect = -(oilDelta * 0.15);
-  // 환율 상승 → 해외여행 수요 국내로 일부 전환 (+) / 항공기재 비용 증가 (-)
   const exchangeEffect = exchangeDelta > 0 ? exchangeDelta * 0.05 - exchangeDelta * 0.08 : exchangeDelta * 0.03;
   const priceEffect = priceDelta > 0 ? -(priceDelta * 0.6) : -(priceDelta * 0.4);
   const lfDelta = oilEffect + exchangeEffect + priceEffect;
-  const newLf = Math.min(100, Math.max(10, BASE_LF + lfDelta));
-  const demandMul = newLf / BASE_LF;
+  const newLf = Math.min(100, Math.max(10, base.lf + lfDelta));
+  const demandMul = newLf / base.lf;
   const priceMul = 1 + priceDelta / 100;
-  const newRevenue = Math.round(BASE_REVENUE * demandMul * priceMul);
-  const newDemand = Math.round(BASE_DEMAND * demandMul);
-  return { newLf: Math.round(newLf), newRevenue, newDemand };
+  const newRevenue = Math.round(base.revenue * demandMul * priceMul);
+  const newDemand = Math.round(base.demand * demandMul);
+  return { newLf: Math.round(newLf), newRevenue, newDemand, base };
 }
 
 interface SimulationStore {
@@ -31,7 +42,7 @@ interface SimulationStore {
 }
 
 const defaultParams: SimulationParamsDTO = {
-  route: KE_DOMESTIC_ROUTES[0],
+  route: "국내선 전체",
   date: new Date().toISOString().slice(0, 10),
   fuelChangePercent: 0,
   exchangeRatePercent: 0,
@@ -51,20 +62,22 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     set({ isRunning: true });
     await new Promise((r) => setTimeout(r, 800));
     const { params } = get();
-    const { fuelChangePercent, exchangeRatePercent, priceChangePercent } = params;
-    const impact = calcImpact(fuelChangePercent, exchangeRatePercent, priceChangePercent);
+    const { route, fuelChangePercent, exchangeRatePercent, priceChangePercent } = params;
+    const impact = calcImpact(route, fuelChangePercent, exchangeRatePercent, priceChangePercent);
+    const { base } = impact;
     const chartData = Array.from({ length: 8 }, (_, i) => {
       const prog = (i + 1) / 8;
       const { newRevenue, newLf } = calcImpact(
+        route,
         fuelChangePercent * prog,
         exchangeRatePercent * prog,
         priceChangePercent * prog,
       );
-      const baseline = Math.round(BASE_REVENUE * (0.85 + Math.random() * 0.3));
+      const baseline = Math.round(base.revenue * (0.85 + Math.random() * 0.3));
       return { month: `${i + 1}월`, baseline, simulation: newRevenue, lf: newLf };
     });
-    const revDeltaPct = Math.round(((impact.newRevenue - BASE_REVENUE) / BASE_REVENUE) * 100);
-    const demandDeltaPct = Math.round(((impact.newDemand - BASE_DEMAND) / BASE_DEMAND) * 100);
+    const revDeltaPct = Math.round(((impact.newRevenue - base.revenue) / base.revenue) * 100);
+    const demandDeltaPct = Math.round(((impact.newDemand - base.demand) / base.demand) * 100);
     set({
       result: {
         expectedDemandChange: demandDeltaPct,

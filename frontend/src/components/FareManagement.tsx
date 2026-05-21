@@ -251,6 +251,13 @@ function aiReallocateSeats(
   return { classes: updated, logMessages };
 }
 
+// DDMMM 형식으로 날짜 변환 (예: "2026-05-21" → "21MAY")
+function toDDMMM(dateStr: string): string {
+  const monthLabels = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const d = new Date(dateStr);
+  return `${String(d.getDate()).padStart(2, "0")}${monthLabels[d.getMonth()]}`;
+}
+
 export default function FareManagement() {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
@@ -294,6 +301,10 @@ export default function FareManagement() {
   const [seatAlert, setSeatAlert] = useState<string | null>(null);
   const [inventoryLogPopup, setInventoryLogPopup] = useState<{ messages: string[]; flightId: string } | null>(null);
   const [step, setStep] = useState<"list" | "detail">("list");
+  const [lastRefreshTime, setLastRefreshTime] = useState<string>(() => {
+    const now = new Date();
+    return now.toTimeString().slice(0, 8);
+  });
   const aiRef = useRef<HTMLTextAreaElement>(null);
   const { updateFare } = useFareStore();
   const { approveRecommendation, rejectRecommendation } = useAiRecommendationStore();
@@ -1155,16 +1166,11 @@ export default function FareManagement() {
             {/* 중앙+우측: 운항 현황 (col-span-9) */}
             <section className="col-span-12 lg:col-span-9">
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-end flex-wrap gap-2">
-                  <div>
-                    <h2 className="text-base sm:text-xl font-black text-slate-800 tracking-tight">
-                      {selectedDate} 운항편 판매현황 <span className="text-sm font-bold text-slate-500">(현재기준)</span>
-                    </h2>
-                    <p className="text-[10px] text-slate-400 font-bold mt-1 uppercase tracking-widest">
-                      {selectedFlight.aircraft} ({selectedFlight.totalSeats}석) · {selectedRoute}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
+                <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center flex-wrap gap-2">
+                  <h2 className="text-base sm:text-xl font-black text-slate-800 tracking-tight">
+                    {selectedDate} 운항편 판매현황 <span className="text-sm font-bold text-slate-500">(현재기준)</span>
+                  </h2>
+                  <div className="flex items-center gap-2">
                     <button
                       data-testid="fare-refresh-btn"
                       onClick={() => {
@@ -1177,17 +1183,15 @@ export default function FareManagement() {
                         });
                         setFlights(refreshed);
                         setSelectedFlight(refreshed.find(f => f.id === selectedFlight.id) ?? refreshed[0]);
+                        setLastRefreshTime(new Date().toTimeString().slice(0, 8));
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition-all"
                     >
                       <RefreshCw size={12} /> 새로고침
                     </button>
-                    <div className="text-right">
-                      <span className="text-[10px] font-black text-slate-400 block mb-1 uppercase">Selected</span>
-                      <span className="text-sm sm:text-lg font-black" style={{ color: BRAND }}>
-                        {selectedFlight.id} / {selectedFlight.time}
-                      </span>
-                    </div>
+                    <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
+                      마지막 업데이트: {lastRefreshTime}
+                    </span>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -1245,8 +1249,8 @@ export default function FareManagement() {
                               </td>
                               <td className="px-4 sm:px-5 py-3 sm:py-4">
                                 <div className="flex flex-col items-center gap-1">
-                                  <div className="w-14 bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                    <div className={`h-full ${lfBarColor(f.lf)}`} style={{ width: `${f.lf}%` }} />
+                                  <div className="w-16 bg-slate-200 rounded-full h-3 overflow-hidden">
+                                    <div className={`h-full rounded-full ${lfBarColor(f.lf)}`} style={{ width: `${f.lf}%` }} />
                                   </div>
                                   <span className="text-[11px] font-black text-slate-600">{f.lf}%</span>
                                 </div>
@@ -1292,7 +1296,9 @@ export default function FareManagement() {
               <div className="h-5 w-px bg-slate-200" />
               <div>
                 <span className="font-black text-slate-800 text-sm">{selectedFlight.id}</span>
-                <span className="text-slate-400 text-xs font-bold ml-2">{selectedFlight.time} ({selectedFlight.timeSlot}) · {selectedFlight.aircraft}</span>
+                <span className="text-slate-400 text-xs font-bold ml-2">
+                  {selectedFlight.time} ({selectedFlight.timeSlot}) · {selectedFlight.aircraft} · {toDDMMM(selectedDate)}
+                </span>
               </div>
               {crossRouteAiPrices[selectedRoute]?.[selectedFlight.id] && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-black">
@@ -1552,7 +1558,7 @@ function ClassEditCard({
             </div>
             {/* 판매율 바 */}
             <div className="flex items-center gap-1.5 mt-1.5">
-              <div className="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+              <div className="flex-1 bg-slate-100 h-3 rounded-full overflow-hidden">
                 <div
                   className="h-full transition-all duration-700 rounded-full"
                   style={{ width: `${soldPct}%`, backgroundColor: accentColor, opacity: isClosed ? 0.4 : 1 }}
@@ -1565,35 +1571,43 @@ function ClassEditCard({
           {/* 판매 / 전체 좌석 */}
           <div className="shrink-0 text-right">
             <div className="text-[8px] text-slate-400 font-bold leading-none mb-0.5">판매/전체</div>
-            <div className="flex items-baseline gap-0.5 justify-end">
-              <span className="text-xs font-black text-slate-700">{cls.sold}</span>
-              <span className="text-[9px] text-slate-400"> / </span>
-              {isEditingSeats ? (
-                <div className="flex items-center gap-0.5">
-                  <input
-                    type="number"
-                    value={editState!.value}
-                    onChange={(e) => onEditChange(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") onCommit(); if (e.key === "Escape") onCancel(); }}
-                    className="w-10 border border-blue-400 rounded px-1 py-0.5 text-center text-xs font-mono focus:outline-none"
-                    autoFocus
-                  />
-                  <button onClick={onCommit} className="text-emerald-600"><CheckCircle size={11} /></button>
-                  <button onClick={onCancel} className="text-red-400"><XIcon size={11} /></button>
-                </div>
-              ) : (
+            {isEditingSeats ? (
+              <div className="flex items-center gap-1 justify-end mt-0.5">
+                <input
+                  type="number"
+                  value={editState!.value}
+                  onChange={(e) => onEditChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") onCommit(); if (e.key === "Escape") onCancel(); }}
+                  className="border-2 border-blue-500 rounded-lg px-2 py-1 text-center text-sm font-mono font-black focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  style={{ width: `${Math.max(4, editState!.value.length * 0.9 + 1.5)}rem` }}
+                  autoFocus
+                />
+                <button onClick={onCommit} className="p-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-600 rounded-lg transition-colors">
+                  <CheckCircle size={14} />
+                </button>
+                <button onClick={onCancel} className="p-1 bg-red-50 hover:bg-red-100 text-red-400 rounded-lg transition-colors">
+                  <XIcon size={14} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-baseline gap-0.5 justify-end">
+                <span className="text-xs font-black text-slate-700">{cls.sold}</span>
+                <span className="text-[9px] text-slate-400"> / </span>
                 <button
                   onClick={() => canEditSeats && onStartEdit(flightId, cls.code, "seats", cls.seats)}
                   disabled={!canEditSeats}
-                  className={`text-xs font-black transition-colors ${
-                    !canEditSeats ? "text-slate-300 cursor-not-allowed" : "text-slate-700 hover:text-blue-600 underline decoration-dotted"
+                  className={`text-xs font-black px-1.5 py-0.5 rounded-md transition-all ${
+                    !canEditSeats
+                      ? "text-slate-300 cursor-not-allowed"
+                      : "text-white hover:opacity-80 shadow-sm"
                   }`}
+                  style={canEditSeats ? { backgroundColor: accentColor } : {}}
                   title={isPrestige ? "프레스티지 좌석 수 변경 불가" : isClosed ? "Closed — 좌석 수 변경 불가" : isSoldOut ? "매진 — 좌석 수 늘리기만 가능" : "클릭하여 수정"}
                 >
                   {cls.seats}석
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
