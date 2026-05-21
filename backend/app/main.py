@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import os
 from pathlib import Path
 from fastapi import FastAPI, Request
@@ -8,7 +9,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env", override=True)
+
+# AI 분석 로그: 콘솔 + 파일(backend/logs/ai_strategy.log) 동시 출력
+_log_dir = Path(__file__).resolve().parent.parent / "logs"
+_log_dir.mkdir(exist_ok=True)
+_ai_logger = logging.getLogger("groq_ai_engine")
+_ai_logger.setLevel(logging.INFO)
+if not _ai_logger.handlers:
+    _fmt = logging.Formatter("%(asctime)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    _fh = logging.FileHandler(_log_dir / "ai_strategy.log", encoding="utf-8")
+    _fh.setFormatter(_fmt)
+    _ch = logging.StreamHandler()
+    _ch.setFormatter(_fmt)
+    _ai_logger.addHandler(_fh)
+    _ai_logger.addHandler(_ch)
 
 from app.database import engine
 from app.models import models

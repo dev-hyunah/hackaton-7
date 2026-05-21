@@ -24,7 +24,7 @@ EMSRb 알고리즘 기반 좌석 인벤토리 최적화, AI 운임 전략 분석
 - **SQLAlchemy 2.0** (ORM) + **SQLite** (개발용 DB)
 - **Pydantic 2.10** (데이터 검증)
 - **Uvicorn 0.32** (ASGI 서버)
-- **Anthropic SDK 0.50+** (Claude AI 엔진 — 현재 API Key 미설정, MockAiEngine으로 동작)
+- **Groq API** (AI 전략 분석 — `llama-3.3-70b-versatile`, 무료 티어, 현재 활성)
 - **SciPy** (EMSRb 정규분포 계산)
 
 ### Frontend
@@ -37,8 +37,10 @@ EMSRb 알고리즘 기반 좌석 인벤토리 최적화, AI 운임 전략 분석
 - **docx** (보고서 DOCX 내보내기)
 
 ### AI Engine
-- **ClaudeAiEngine** — `ANTHROPIC_API_KEY` 설정 시 Claude Sonnet 4.6 실호출. 현재 미설정으로 MockAiEngine으로 동작
-- **MockAiEngine** — 탑승률 기반 규칙형 운임 추천 (±30% BR-03 제한 적용)
+- **GroqAiEngine** — `GROQ_API_KEY` 설정 시 `llama-3.3-70b-versatile` 실호출 (무료 티어). **현재 활성**
+- **OllamaAiEngine** — 로컬 Ollama 서버 연동 (기본 모델: `exaone3.5:7.8b`). 로컬 실행 전용
+- **ClaudeAiEngine** — `ANTHROPIC_API_KEY` 설정 시 Claude Sonnet 4.6 실호출. 현재 미사용
+- **MockAiEngine** — 탑승률 기반 규칙형 운임 추천 (±30% BR-03 제한 적용). Fallback 구현체
 - `AbstractAiEngine` 인터페이스로 추상화되어 교체 가능
 
 ---
@@ -72,8 +74,10 @@ hackaton-7/
 │   └── package.json
 └── ai_engine/                # AI 추천 엔진 (backend/ 외부에 위치)
     ├── interfaces.py         # AbstractAiEngine / AbstractSimulationEngine
-    ├── claude_ai_engine.py   # Claude 기반 AI 엔진 (analyze_strategy 구현 완료)
-    ├── mock_ai_engine.py     # 규칙형 Mock 구현체 (현재 실제 동작)
+    ├── groq_ai_engine.py     # Groq API 기반 AI 엔진 (현재 활성, 무료 티어)
+    ├── ollama_ai_engine.py   # 로컬 Ollama 기반 AI 엔진 (로컬 전용)
+    ├── claude_ai_engine.py   # Claude 기반 AI 엔진 (analyze_strategy 구현 완료, 미사용)
+    ├── mock_ai_engine.py     # 규칙형 Mock 구현체 (Fallback)
     └── mock_simulation_engine.py
 ```
 
@@ -227,18 +231,22 @@ pytest tests/
 
 ## AI Engine 현재 상태
 
-> **과금 제한으로 Claude API 미연결** — `ANTHROPIC_API_KEY`를 설정하지 않아 현재 MockAiEngine으로 동작합니다.
+**Groq API 연결 완료** — `llama-3.3-70b-versatile` 모델로 AI 전략 분석 실제 동작 중입니다.
 
-| 기능 | 구현 상태 | 현재 동작 |
+| 기능 | 구현 엔진 | 현재 동작 |
 |------|----------|----------|
-| AI 전략 분석 (이슈 텍스트 입력) | 코드 완전 구현 | MockAiEngine fallback |
-| 등급별 운임 추천 생성 | 미구현 (Mock 위임) | MockAiEngine 동작 |
+| AI 전략 분석 (이슈 텍스트 입력) | GroqAiEngine | llama-3.3-70b-versatile 실호출 |
+| 등급별 운임 추천 생성 | MockAiEngine | 규칙형 Mock 동작 |
 
-**Claude API 활성화 방법**: `backend/.env` 파일에 아래를 추가하세요.
+**Groq API 설정**: `backend/.env` 파일에 아래를 추가하세요.
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+GROQ_API_KEY=gsk_...
 ```
+
+**AWS 배포 시**: App Runner 콘솔 → 서비스 → 구성 → 환경 변수에 `GROQ_API_KEY` 추가
+
+**로그 확인**: `backend/logs/ai_strategy.log` (로컬) 또는 App Runner 로그 탭 (AWS)
 
 ---
 

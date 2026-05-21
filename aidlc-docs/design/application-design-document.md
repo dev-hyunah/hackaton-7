@@ -1,7 +1,7 @@
 # 애플리케이션 설계서 (Application Design Document)
 
 **프로젝트**: Revenue Manager — 항공 운임 수익 관리 시스템  
-**버전**: v8 (최신)  
+**버전**: v9 (최신)  
 **작성일**: 2026-05-22  
 **작성 방법론**: AIDLC (AI-Driven Development Lifecycle)
 
@@ -364,11 +364,23 @@ class AbstractAiEngine(ABC):
     @abstractmethod
     def analyze_strategy(self, issue_text, context) -> dict: ...
 
+class GroqAiEngine(AbstractAiEngine):
+    # GROQ_API_KEY 설정 시 llama-3.3-70b-versatile 실호출 (무료 티어)
+    # API Key 미설정 또는 오류 시 MockAiEngine으로 자동 fallback
+    def analyze_strategy(self, issue_text, context) -> dict: ...
+    def generate_recommendation(self, flight, fare) -> dict: ...  # Mock 위임
+
 class ClaudeAiEngine(AbstractAiEngine):
     # ANTHROPIC_API_KEY 설정 시 Claude Sonnet 4.6 실호출
     # API Key 미설정 시 MockAiEngine으로 자동 fallback
     def analyze_strategy(self, issue_text, context) -> dict: ...
-    def generate_recommendation(self, flight, fare) -> dict: ...  # 현재 Mock 위임
+    def generate_recommendation(self, flight, fare) -> dict: ...  # Mock 위임
+
+class OllamaAiEngine(AbstractAiEngine):
+    # 로컬 Ollama 서버 사용 (기본 모델: exaone3.5:7.8b)
+    # 연결 실패 시 MockAiEngine으로 자동 fallback
+    def analyze_strategy(self, issue_text, context) -> dict: ...
+    def generate_recommendation(self, flight, fare) -> dict: ...  # Mock 위임
 
 class MockAiEngine(AbstractAiEngine):
     # 규칙 기반 Mock — 오프라인 / Fallback / 기본 동작
@@ -378,29 +390,33 @@ class MockAiEngine(AbstractAiEngine):
 
 - 인터페이스 교체만으로 프로덕션 ↔ Mock 전환
 - `AiRecommendationService`는 `AbstractAiEngine`만 의존
+- 현재 `AiRecommendationService`는 `GroqAiEngine` 사용
 
-> **⚠️ 현재 구현 상태 — Claude API 미연결 (과금 제한)**
+> **현재 구현 상태 — Groq API 연결 (무료 티어)**
 >
-> Claude API 연동 코드(`ClaudeAiEngine`)는 완전히 작성되어 있으나, **과금 우려로 `ANTHROPIC_API_KEY` 환경변수를 설정하지 않아 현재 운영 환경에서는 MockAiEngine으로 동작 중**이다.
->
-> | 기능 | Claude 실호출 코드 | 현재 동작 |
+> | 기능 | 구현 엔진 | 현재 동작 |
 > |---|---|---|
-> | AI 전략 분석 (`analyze_strategy`) | ✅ 구현 완료 | MockAiEngine fallback (API Key 없음) |
-> | 등급별 운임 추천 (`generate_recommendation`) | ❌ Mock 위임만 | MockAiEngine 동작 |
+> | AI 전략 분석 (`analyze_strategy`) | GroqAiEngine ✅ | llama-3.3-70b-versatile 실호출 |
+> | 등급별 운임 추천 (`generate_recommendation`) | MockAiEngine | 규칙 기반 Mock 동작 |
 >
-> **활성화 방법**: `ANTHROPIC_API_KEY` 환경변수 설정 시 AI 전략 분석은 즉시 Claude 실호출로 전환됨. 등급별 운임 추천은 별도 구현 필요.
+> **Fallback 체인**: GroqAiEngine 오류 → MockAiEngine 자동 전환  
+> **로컬 실행 시**: `GROQ_API_KEY` 미설정 → MockAiEngine fallback  
+> **AWS 배포 시**: App Runner 환경변수에 `GROQ_API_KEY` 설정 필요
 
-### 7.2 Claude AI 분석 흐름 (구현 완료 — API Key 설정 시 활성화)
+### 7.2 AI 전략 분석 흐름 (GroqAiEngine — 현재 활성)
 
 ```
-1. 담당자: 돌발 이슈 자유 텍스트 입력 (태풍·행사·경쟁사 동향)
-2. ClaudeAiEngine: 노선·편명·출발일·오늘날짜·등급별 현황 포함 프롬프트 구성
-3. Claude Sonnet 4.6 API 호출 (max_tokens=1024)
+1. 담당자: 돌발 이슈 자유 텍스트 입력 (태풍·행사·경쟁사 동향 등)
+2. GroqAiEngine: 노선·편명·출발일·오늘날짜·등급별 현황 포함 프롬프트 구성
+   - Step 1: 이슈와 항공편 날짜·노선 관련성 판단 (irrelevant 여부)
+   - Step 2: 관련 있을 때만 4개 등급별 최적 운임 추천
+3. Groq API 호출 (llama-3.3-70b-versatile, max_tokens=1024, response_format=json_object)
 4. 응답 파싱: irrelevant 여부 + 4개 등급별 추천 가격 + 조정 근거 (JSON)
 5. BR-03 ±30% 클램핑 적용
 6. StrategyAnalysisSchema 반환 → 담당자 승인/기각 UI 표시
 
-현재: ANTHROPIC_API_KEY 미설정 → MockAiEngine으로 자동 fallback (동일 인터페이스)
+로깅: 요청/응답/소요시간/토큰 사용량을 backend/logs/ai_strategy.log 및 콘솔에 기록
+오류 시: MockAiEngine으로 자동 fallback (동일 인터페이스)
 ```
 
 ### 7.3 EMSRb (Expected Marginal Seat Revenue-b) 알고리즘

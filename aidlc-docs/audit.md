@@ -1,5 +1,13 @@
 # AI-DLC Audit Log
 
+## [groq-ai-integration] Construction — Groq API 연동 AI 전략 분석 구현
+**Timestamp**: 2026-05-22T17:30:00Z
+**User Input**: "유료는 할 수 없어. 무료로 할 수 있는 방법을 알려줘." / "api key를 발급 받았어." / "관련해서 requirements와 이력을 최신화해주고, readme.md에도 관련 내용을 추가할 것이 있으면 추가해줘. 그리고 aidlc-docs/design에 있는 애플리케이션 설계문서와 아키텍처 설계문서에도 관련 내용을 추가해줘."
+**AI Response**: "ai_engine/groq_ai_engine.py 신규 구현 (Groq 무료 API, llama-3.3-70b-versatile, 요청/응답 로깅, MockAiEngine fallback). ai_engine/ollama_ai_engine.py 신규 구현 (로컬 Ollama, exaone3.5:7.8b). ai_recommendation_service.py: GroqAiEngine 교체. main.py: dotenv 경로 명시·override=True·groq_ai_engine 로거 설정. requirements.md v9 통합, requirements_delta_v9.md 신규. application-design-document.md·architecture-design-document.md v9 업데이트 (GroqAiEngine 활성 상태, OllamaAiEngine 추가, AI 분석 흐름 최신화). README.md(루트·백엔드) AI Engine 섹션 최신화. changelog·audit.md 업데이트."
+**Context**: CONSTRUCTION - Groq 무료 API 연동으로 AI 전략 분석 실제 LLM 호출 구현 및 전체 문서 v9 최신화
+
+---
+
 ## [docs-claude-api-status] Documentation — Claude API 미연결 상태 설계서 명시
 **Timestamp**: 2026-05-22T06:50:00Z
 **User Input**: "claude code api 연결하는 것은 최종 연결까지 안한거로 아는데, 맞으면 자료에 관련해서 명시해 주는 것이 좋아 보이는데? 과금으로 인해서 실제 구현은 하지 않았다는 식으로"

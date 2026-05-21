@@ -10,7 +10,7 @@ from app.schemas.schemas import (
     AiRecommendationSchema, ApprovalResponse, RejectionResponse,
     StrategyAnalysisSchema, ClassAdjustment, ClassContext,
 )
-from ai_engine.claude_ai_engine import ClaudeAiEngine
+from ai_engine.groq_ai_engine import GroqAiEngine
 
 
 class AiRecommendationService:
@@ -18,7 +18,7 @@ class AiRecommendationService:
         self.db = db
         self.fare_repo = FareRepository(db)
         self.history_repo = PriceHistoryRepository(db)
-        self.ai_engine = ClaudeAiEngine()
+        self.ai_engine = GroqAiEngine()
 
     def get_recommendations(self, route_id: str | None = None) -> list[AiRecommendationSchema]:
         query = self.db.query(AiRecommendation)

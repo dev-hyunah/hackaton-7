@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-05-22 — Groq API 연동으로 AI 전략 분석 실제 LLM 호출 구현 (v9)
+
+**파일**: `ai_engine/groq_ai_engine.py` (신규), `ai_engine/ollama_ai_engine.py` (신규), `backend/app/services/ai_recommendation_service.py`, `backend/app/main.py`, `README.md`, `backend/README.md`, `aidlc-docs/design/application-design-document.md`, `aidlc-docs/design/architecture-design-document.md`, `aidlc-docs/inception/requirements/requirements.md`, `aidlc-docs/inception/requirements/requirements_delta_v9.md` (신규)
+
+### 변경 내용
+
+- `ai_engine/groq_ai_engine.py` 신규 구현
+  - Groq 무료 API (`llama-3.3-70b-versatile`) 실호출
+  - 기존 ClaudeAiEngine과 동일한 시스템 프롬프트 재사용
+  - 요청/응답/소요시간/토큰 사용량 로깅 (`ai_strategy.log`)
+  - `GROQ_API_KEY` 미설정 또는 오류 시 MockAiEngine 자동 fallback
+- `ai_engine/ollama_ai_engine.py` 신규 구현
+  - 로컬 Ollama 서버 연동 (기본 모델: `exaone3.5:7.8b`)
+  - 연결 실패 시 MockAiEngine 자동 fallback
+- `backend/app/services/ai_recommendation_service.py`: `ClaudeAiEngine` → `GroqAiEngine` 교체
+- `backend/app/main.py`: `load_dotenv()` 경로 명시 (`Path(__file__).resolve().parent.parent / ".env"`), `override=True`, `groq_ai_engine` 로거 설정
+- 설계서 v8 → v9: AI Engine 섹션 전체 업데이트 (GroqAiEngine 활성 상태 반영)
+- requirements.md v9 통합, requirements_delta_v9.md 신규 생성
+- README.md (루트·백엔드) AI Engine 상태 최신화
+
+---
+
 ## 2026-05-22 — 설계서에 Claude API 미연결 상태 명시
 
 **파일**: `aidlc-docs/design/application-design-document.md`, `aidlc-docs/design/architecture-design-document.md`

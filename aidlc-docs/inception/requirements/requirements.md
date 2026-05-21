@@ -4,7 +4,7 @@
 
 > **관리 정책**: 이 파일은 항상 최신 전체 요구사항을 반영합니다.
 > 변경 시 해당 delta 파일(`requirements_delta_vN.md`)을 먼저 작성하고 이 파일에 통합하세요.
-> 마지막 통합 기준: **v1 + v2 + changelog + v3 + jin v1~v2 (좌석 로직 개편) + jin v2 보완 (Closed 운임 잠금) + 버그수정 (Sold Out→Open 복구, 2026-05-18) + v4 (Step1/2 화면 전환, 좌석 배치도, EMSRb·Dynamic Pricing, 좌석 크기·간격 개선, 2026-05-19) + v6 (실제 운항 노선 제한, 금액 콤마 표기, 반응형, 대시보드 데이터 연동, 운임관리 UI 개선, 시뮬레이터 국내선 전체, 보고서 기간 필터, 2026-05-21) + v7 Phase1~7 (DB 연동 전면, URL 라우팅, 편명 버그픽스 등, 2026-05-21) + v8 (Sold Out 가격 잠금 수정, 좌석 총합 초과 에러, 인벤토리 확정 AI 운임 저장, 날짜별 적용 완료 격리, 2026-05-22)**
+> 마지막 통합 기준: **v1 + v2 + changelog + v3 + jin v1~v2 (좌석 로직 개편) + jin v2 보완 (Closed 운임 잠금) + 버그수정 (Sold Out→Open 복구, 2026-05-18) + v4 (Step1/2 화면 전환, 좌석 배치도, EMSRb·Dynamic Pricing, 좌석 크기·간격 개선, 2026-05-19) + v6 (실제 운항 노선 제한, 금액 콤마 표기, 반응형, 대시보드 데이터 연동, 운임관리 UI 개선, 시뮬레이터 국내선 전체, 보고서 기간 필터, 2026-05-21) + v7 Phase1~7 (DB 연동 전면, URL 라우팅, 편명 버그픽스 등, 2026-05-21) + v8 (Sold Out 가격 잠금 수정, 좌석 총합 초과 에러, 인벤토리 확정 AI 운임 저장, 날짜별 적용 완료 격리, 2026-05-22) + v9 (Groq API 연동으로 AI 전략 분석 실제 LLM 호출 구현, Ollama 로컬 엔진 추가, AI 분석 로깅, 2026-05-22)**
 
 ---
 
@@ -109,7 +109,7 @@
 ### FR-03: AI 전략 분석 요청 (AI Strategy Analysis)
 
 - 담당자가 돌발 이슈를 자유 텍스트로 입력 (태풍, 행사, 연휴, 경쟁사 동향 등)
-- **'AI 전략 분석 시작' 버튼 클릭 시 AI model을 실제로 호출하여 응답 반환** — 하드코딩 응답 제거, 실제 AI model API 연동 필요
+- **'AI 전략 분석 시작' 버튼 클릭 시 AI model을 실제로 호출하여 응답 반환** — Groq API (`llama-3.3-70b-versatile`) 연동으로 구현 완료 (v9). GROQ_API_KEY 미설정 시 MockAiEngine fallback
 - AI가 가격 변동 요인 판단 → 변경 필요 시 전략 제안 팝업 표출 (dimmed 오버레이 + 중앙 모달)
 - 제안 내용: 분석 근거 텍스트 + 가격 변동 방향 + 승인/기각 버튼
 - 담당자가 **승인(전략 적용)** 또는 **기각** 선택 후 최종 반영
@@ -377,3 +377,4 @@
 | v7 Phase6 | 2026-05-21 | 운임관리 상세 URL 라우팅(/fares/{flightNo}, 새로고침 유지), 새로고침 시 고객 활동 시뮬레이션(구매/환불/변경 랜덤 반영), 경쟁사 모니터링 'DB 연동' 헤더 칩 제거 | `requirements_delta_v7.md` |
 | v7 Phase7 | 2026-05-21 | 운임관리 항공편명 UUID→KE편명 표시 버그픽스, DashboardFlight 인터페이스 flightNo·route 필드 추가 | `requirements_delta_v7.md` |
 | v8 | 2026-05-22 | Sold Out 가격 잠금(운임 수정 불가로 수정), 좌석 총합 초과 에러 배너(BR-11 신규), 인벤토리 확정 버튼 AI 추천 운임으로 저장 명세 추가, 날짜별 적용 완료 상태 격리(신규) | `requirements_delta_v8.md` |
+| v9 | 2026-05-22 | AI 전략 분석 실제 LLM 연동 (Groq API, llama-3.3-70b-versatile, 무료 티어), Ollama 로컬 엔진 추가 (exaone3.5:7.8b), AI 분석 요청/응답/소요시간/토큰 로깅 (ai_strategy.log), main.py dotenv 경로 명시 | `requirements_delta_v9.md` |

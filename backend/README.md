@@ -1,7 +1,7 @@
 # Backend — Revenue Manager API
 
 FastAPI 기반의 항공 운임 수익 관리 시스템 백엔드입니다.
-SQLite DB를 사용하며 운임 관리, EMSRb 인벤토리 최적화, AI 추천(Claude/Mock), 경쟁사 모니터링, 시뮬레이션, 보고서 API를 제공합니다.
+SQLite DB를 사용하며 운임 관리, EMSRb 인벤토리 최적화, AI 추천(Groq LLM/Mock), 경쟁사 모니터링, 시뮬레이션, 보고서 API를 제공합니다.
 
 ---
 
@@ -15,7 +15,7 @@ SQLite DB를 사용하며 운임 관리, EMSRb 인벤토리 최적화, AI 추천
 | SQLite | — | 개발용 데이터베이스 |
 | Pydantic | 2.10 | 요청/응답 스키마 검증 |
 | Uvicorn | 0.32 | ASGI 서버 |
-| Anthropic SDK | 0.50+ | Claude AI 엔진 (현재 미연결 — MockAiEngine 동작) |
+| Groq API | — | AI 전략 분석 엔진 (llama-3.3-70b-versatile, 무료 티어, 현재 활성) |
 | SciPy | 1.11+ | EMSRb 정규분포 계산 |
 | pytest | 8.3 | 테스트 프레임워크 |
 | python-dotenv | 1.0+ | 환경 변수 관리 |
@@ -108,13 +108,17 @@ PYTHONPATH=.. uvicorn app.main:app --reload --port 8000
 
 ## 환경 변수
 
-`backend/.env` 파일을 생성하세요 (없어도 동작하지만 Claude AI는 Mock으로 대체됨).
+`backend/.env` 파일을 생성하세요 (없어도 동작하지만 AI 분석은 Mock으로 대체됨).
 
 | 변수명 | 설명 | 기본값 |
 |--------|------|--------|
-| `ANTHROPIC_API_KEY` | Claude AI 전략 분석 활성화 시 필요 | 미설정 시 MockAiEngine으로 자동 fallback |
+| `GROQ_API_KEY` | Groq AI 전략 분석 활성화 (무료 티어) | 미설정 시 MockAiEngine으로 자동 fallback |
+| `GROQ_MODEL` | Groq 모델 ID | `llama-3.3-70b-versatile` |
+| `ANTHROPIC_API_KEY` | Claude AI 전략 분석 (ClaudeAiEngine 교체 시) | 미사용 |
+| `OLLAMA_BASE_URL` | Ollama 서버 주소 (OllamaAiEngine 사용 시) | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Ollama 모델 ID | `exaone3.5:7.8b` |
 
-> **현재 상태**: 과금 우려로 `ANTHROPIC_API_KEY` 미설정. AI 전략 분석 기능은 MockAiEngine으로 동작 중.
+> **현재 상태**: `GROQ_API_KEY` 설정됨 — `llama-3.3-70b-versatile`로 AI 전략 분석 실호출 활성화.
 
 ---
 
@@ -198,15 +202,17 @@ PYTHONPATH=.. pytest tests/
 
 `ai_engine/` 디렉터리에 위치하며 `AbstractAiEngine` 인터페이스로 추상화되어 있습니다.
 
-> **현재 상태 (과금 제한)**
-
-| 기능 | 구현 상태 | 현재 동작 |
+| 기능 | 구현 엔진 | 현재 동작 |
 |------|----------|----------|
-| `analyze_strategy()` — AI 전략 분석 | 완전 구현 | ANTHROPIC_API_KEY 미설정 → MockAiEngine fallback |
-| `generate_recommendation()` — 운임 추천 | 미구현 (Mock 위임) | MockAiEngine 동작 |
+| `analyze_strategy()` — AI 전략 분석 | GroqAiEngine | llama-3.3-70b-versatile 실호출 (GROQ_API_KEY 설정) |
+| `generate_recommendation()` — 운임 추천 | MockAiEngine | 규칙형 Mock 동작 |
 
-- **ClaudeAiEngine**: `ANTHROPIC_API_KEY` 환경변수 설정 시 Claude Sonnet 4.6 실호출 활성화
-- **MockAiEngine**: 탑승률 기반 규칙형 추천 (현재 실제 동작 구현체)
+- **GroqAiEngine**: `GROQ_API_KEY` 설정 시 Groq 무료 API 실호출. **현재 활성 구현체**
+- **OllamaAiEngine**: 로컬 Ollama 서버 연동 (기본 모델: `exaone3.5:7.8b`). 로컬 전용
+- **ClaudeAiEngine**: `ANTHROPIC_API_KEY` 설정 시 Claude Sonnet 4.6 실호출. 현재 미사용
+- **MockAiEngine**: 탑승률 기반 규칙형 추천. Fallback 구현체
+
+**AI 분석 로그**: `backend/logs/ai_strategy.log` (요청·응답·소요시간·토큰 사용량 기록)
 
 ---
 
