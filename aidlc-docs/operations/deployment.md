@@ -8,7 +8,7 @@
 ## 서비스 접속 URL
 
 ```
-https://b4fwicpmzi.us-east-1.awsapprunner.com
+https://up8msmtgyc.us-east-1.awsapprunner.com
 ```
 
 ---
@@ -22,11 +22,11 @@ https://b4fwicpmzi.us-east-1.awsapprunner.com
 | 서비스명 | `hackathon-app` |
 | 리전 | `us-east-1` |
 | 상태 | RUNNING |
-| URL | `b4fwicpmzi.us-east-1.awsapprunner.com` |
+| URL | `up8msmtgyc.us-east-1.awsapprunner.com` |
 | 포트 | 8080 |
 | CPU | 1 vCPU (1024) |
 | 메모리 | 2 GB (2048) |
-| ARN | `arn:aws:apprunner:us-east-1:362353307746:service/hackathon-app/22b40908d5fc4ba9be72b3117d83126c` |
+| ARN | `arn:aws:apprunner:us-east-1:362353307746:service/hackathon-app/b9b74b1f1b224f5883d9a309c7335543` |
 
 ### ECR 레포지토리
 
@@ -103,7 +103,7 @@ docker push \
 # 4. App Runner 재배포 트리거
 aws --profile hackathon apprunner start-deployment \
   --region us-east-1 \
-  --service-arn arn:aws:apprunner:us-east-1:362353307746:service/hackathon-app/22b40908d5fc4ba9be72b3117d83126c
+  --service-arn arn:aws:apprunner:us-east-1:362353307746:service/hackathon-app/b9b74b1f1b224f5883d9a309c7335543
 ```
 
 ---

@@ -44,6 +44,23 @@
 - `frontend/src/stores/simulationStore.ts`: IATA 탄력성 계수, `buildRmRecommendation()`, `showModal` state
 - `frontend/src/components/Simulator.tsx`: `SimulationResultModal`, `MetricCard` 컴포넌트 추가
 - `ai_engine/mock_simulation_engine.py`: IATA 탄력성 계수 동기화, 의사난수 시드 고정
+## [Infrastructure Design] Construction — Infrastructure Design 완료
+**Timestamp**: 2026-05-21T23:00:00Z
+**User Input**: "Infrastructure Design 수행해줘 / 현재 프로젝트 상황에 맞게 알아서 답변해줘. 프로젝트를 수정하지 않을거야."
+**AI Response**: "현재 AWS 환경(App Runner, ECR, IAM Role)을 실제 조회 후 현행 인프라를 그대로 문서화. infrastructure-design.md 및 deployment-architecture.md 생성 완료."
+**Context**: CONSTRUCTION PHASE - Infrastructure Design (rm-system)
+
+### 자동 결정 내용
+| 질문 항목 | 결정값 | 근거 |
+|---|---|---|
+| 추가 환경 | 없음 | 해커톤 데모, 단일 환경 운영 |
+| 컴퓨팅 사이즈 | 1 vCPU / 2GB 유지 | 단일 사용자 기준 충분, App Runner 확인 |
+| DB | SQLite 유지 | 데모 목적, 코드 수정 없음 |
+| Claude API Key | 환경변수 직접 설정 | Secrets Manager 미사용 |
+| 네트워킹 | App Runner URL 그대로 | 커스텀 도메인/CDN/WAF 불필요 |
+| 모니터링 | CloudWatch 기본 로그만 | 해커톤 수준 |
+| CI/CD | 수동 배포 유지 | 자동화 불필요 |
+| 스케일링 | Auto Scaling 기본값 | 특별 요구사항 없음 |
 
 ---
 
