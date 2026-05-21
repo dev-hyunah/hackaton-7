@@ -38,7 +38,8 @@
       "Bash(/Users/choisoobhin/.pyenv/versions/3.13.1/bin/python -c ' *)",
       "Bash(pkill -f \"uvicorn backend.app.main\")",
       "Bash(PYTHONPATH=/Users/choisoobhin/projects/ai-dlc/hackaton-7 /Users/choisoobhin/.pyenv/versions/3.13.1/bin/python -m uvicorn backend.app.main:app --port 8000 --host 127.0.0.1)",
-      "Bash(echo \"PID: $!\")"
+      "Bash(echo \"PID: $!\")",
+      "Bash(PATH=__TRACKED_VAR__/.nvm/versions/node/v20.19.5/bin:__TRACKED_VAR__ npx vite build)"
     ],
     "additionalDirectories": [
       "/private/tmp"

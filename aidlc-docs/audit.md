@@ -1,5 +1,52 @@
 # AI-DLC Audit Log
 
+## [simulator-slider-center] Construction — 슬라이더 범위 대칭화
+**Timestamp**: 2026-05-21T22:30:00Z
+**User Input**: "각 슬라이더가 0%일때 가운데에 위치할 수 있도록 해줘. 지금 왼쪽으로 조금 치우쳐져 있어."
+**AI Response**: "세 슬라이더 모두 min/max를 대칭 범위로 수정. 유가 -50~+50, 환율 -30~+30, 운임 -50~+50."
+**Context**: CONSTRUCTION PHASE - UI Fix (슬라이더 중앙 정렬)
+
+### 변경 사항
+- `frontend/src/components/Simulator.tsx`: 유가 min=-30→-50, 환율 min=-20→-20(max=30→30), 운임 min=-30→-50/max=50 유지
+
+---
+
+## [simulator-console-log] Construction — 시뮬레이션 계산 과정 콘솔 로그 추가
+**Timestamp**: 2026-05-21T22:20:00Z
+**User Input**: "시뮬레이터에서 슬라이더를 조정했을 때, 왜 그런 값이 나왔는지 기준 계수나 계산 법을 콘솔 로그로 남겨줘."
+**AI Response**: "calcImpact()에 log 파라미터 추가. 시뮬레이션 실행 시 입력값·기준값·외부요인·탄력성·최종계산·결과 요약을 console.group 계층으로 출력."
+**Context**: CONSTRUCTION PHASE - 디버깅/투명성 개선
+
+### 변경 사항
+- `frontend/src/stores/simulationStore.ts`: `calcImpact()`에 `log=false` 파라미터 추가, `runSimulation()`에서 `log=true` 호출
+
+---
+
+## [simulator-modal-no-price] Construction — 팝업 등급별 탄력성 섹션 조건부 표시
+**Timestamp**: 2026-05-21T22:10:00Z
+**User Input**: "요약 팝업에서 등급별 수요변화, 수익변화는 왜 다 0%인거야? → 1번대로 해줘."
+**AI Response**: "운임 조정=0일 때 탄력성 테이블 숨기고 안내 문구 표시. 탄력성은 가격 변화에만 반응하므로 운임 조정 없을 때 0%는 정상."
+**Context**: CONSTRUCTION PHASE - UX 개선 (혼란 요소 제거)
+
+### 변경 사항
+- `frontend/src/components/Simulator.tsx`: `params.priceChangePercent !== 0` 조건부로 테이블 렌더링, 0일 때 안내 문구 표시
+
+---
+
+## [simulator-refactor] Construction — 시뮬레이터 IATA 탄력성 적용 및 결과 팝업 추가
+**Timestamp**: 2026-05-21T22:00:00Z
+**User Input**: "탄력성 계수를 DB 실제 데이터 기반해서 하고 싶은데 → 진행해주고, 시뮬레이션 실행을 했을 때, 전체적인 내용 요약상황을 팝업 형태로 띄워줘."
+**AI Response**: "IATA 단거리 아시아 국내선 기준 등급별 탄력성 적용, 결과 요약 팝업(SimulationResultModal) 추가, 백엔드 엔진 동기화."
+**Context**: CONSTRUCTION PHASE - 시뮬레이터 고도화
+
+### 변경 사항
+- `frontend/src/types/index.ts`: `ClassImpactDTO`, `SimulationResultDTO.classSummary/rmRecommendation` 추가
+- `frontend/src/stores/simulationStore.ts`: IATA 탄력성 계수, `buildRmRecommendation()`, `showModal` state
+- `frontend/src/components/Simulator.tsx`: `SimulationResultModal`, `MetricCard` 컴포넌트 추가
+- `ai_engine/mock_simulation_engine.py`: IATA 탄력성 계수 동기화, 의사난수 시드 고정
+
+---
+
 ## [class-lf-ui] Construction — 등급별 평균 LF 차트 수직 바 전환 및 한글 레이블
 **Timestamp**: 2026-05-21T20:00:00Z
 **User Input**: "기존 대시보드 화면인데 이미지 첨부파일을 참고해서 이렇게 표출되도록 ai-dlc방법론 적용해서 수정해줘 이에 맞게 DB 데이터도 수정해줘"

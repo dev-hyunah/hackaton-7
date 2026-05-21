@@ -92,11 +92,21 @@ export interface SimulationChartPoint {
   lf: number;
 }
 
+export interface ClassImpactDTO {
+  classCode: string;
+  tier: string;
+  elasticity: number;
+  demandChangePct: number;
+  revenueChangePct: number;
+}
+
 export interface SimulationResultDTO {
   expectedDemandChange: number;
   expectedRevenueChange: number;
   optimalPriceRange: { min: number; max: number };
   chartData: SimulationChartPoint[];
+  classSummary: ClassImpactDTO[];
+  rmRecommendation: string;
 }
 
 export interface ProfitAnalysisDTO {

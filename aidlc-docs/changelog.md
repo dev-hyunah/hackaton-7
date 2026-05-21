@@ -4,6 +4,83 @@
 
 ---
 
+## 2026-05-21 — 시뮬레이터 슬라이더 범위 대칭화
+
+**파일**: `frontend/src/components/Simulator.tsx`
+
+### 변경 내용
+- 유가 변동 슬라이더: `min=-30 max=50` → `min=-50 max=50` (0이 정중앙에 위치)
+- 환율 변동 슬라이더: `min=-20 max=30` → `min=-30 max=30` (0이 정중앙에 위치)
+- 자사 운임 조정 슬라이더: `min=-30 max=50` → `min=-50 max=50` (0이 정중앙에 위치)
+- 각 슬라이더 하단 레이블 최솟값 텍스트 동일하게 수정
+
+---
+
+## 2026-05-21 — 시뮬레이터 계산 과정 콘솔 로그 추가
+
+**파일**: `frontend/src/stores/simulationStore.ts`
+
+### 변경 내용
+- `calcImpact()` 함수에 `log: boolean` 파라미터 추가 (기본값 false)
+- 시뮬레이션 실행 버튼 클릭 시 최종 계산에만 `log=true` 전달 (차트용 8회 반복 계산은 제외)
+- 콘솔 출력 구조 (console.group 계층):
+  - `📥 입력값`: 유가·환율·운임 변동값
+  - `📊 노선 기준값`: 기준 수익·LF·수요
+  - `⚙️ 외부요인 LF 변화 계산`: 유가효과·환율효과 계수 및 계산식
+  - `🎯 등급별 가격탄력성`: 운임 조정 있을 때만 — IATA 탄력성 계수·수요변화·수익변화 console.table
+  - `📈 최종 LF·수익 계산`: LF 변화량·수요 배수·가격 배수·최종 수익 계산식
+  - `✅ 결과 요약`: 수익변화%·수요변화%·새 LF
+
+---
+
+## 2026-05-21 — 시뮬레이션 결과 팝업 등급별 탄력성 섹션 조건부 표시
+
+**파일**: `frontend/src/components/Simulator.tsx`
+
+### 변경 내용
+- 등급별 가격탄력성 테이블: 자사 운임 조정 슬라이더가 0일 때 숨김
+- 운임 조정 0일 때 대체 안내 문구 표시: "등급별 탄력성 영향은 자사 운임 조정 슬라이더를 0 이외로 설정할 때 표시됩니다"
+- 이유: 탄력성은 가격 변화에만 반응하므로 운임 조정 없을 때 모두 0%로 표시되던 혼란 해소
+
+---
+
+## 2026-05-21 — 시뮬레이션 결과 요약 팝업 추가 및 IATA 기준 탄력성 적용
+
+**파일**: `frontend/src/stores/simulationStore.ts`, `frontend/src/components/Simulator.tsx`, `frontend/src/types/index.ts`, `ai_engine/mock_simulation_engine.py`
+
+### 변경 내용
+
+#### simulationStore.ts — IATA 기준 탄력성 계수 적용
+- 기존 단일 계수(`-0.6 / -0.4`) → IATA 단거리 아시아 국내선 기준 등급별 차등 적용:
+  - C (프레스티지): `-0.45` / Y (일반 정상): `-0.95` / M (일반 할인): `-1.35` / V (특가): `-1.75`
+- `CLASS_ELASTICITY` 상수 추가: 등급별 탄력성·수요비중 정의
+- `calcImpact()` 개편: 외부요인(유가·환율) LF 변화 + 등급별 가중평균 수요 변화 분리 계산
+- 기준선 차트 데이터: `Math.random()` → 시드 고정 의사난수(`Math.sin`) 사용 (매 실행 동일 결과)
+- `buildRmRecommendation()` 함수 추가: LF·수익변화·운임조정 조건 기반 RM 권고 문구 생성
+- `showModal` state 추가: 시뮬레이션 완료 시 `true`로 전환
+- `closeModal()` 액션 추가
+
+#### types/index.ts
+- `ClassImpactDTO` 인터페이스 추가: `classCode`, `tier`, `elasticity`, `demandChangePct`, `revenueChangePct`
+- `SimulationResultDTO`에 `classSummary: ClassImpactDTO[]`, `rmRecommendation: string` 필드 추가
+
+#### Simulator.tsx — 결과 요약 팝업 추가
+- `SimulationResultModal` 컴포넌트 신규 추가:
+  - 결과 심각도(수익 -10% 이하 / +5% 이상 / 중립)에 따라 상단 바·배지 색상 변경
+  - 핵심 지표 카드 3개: 수익 변화%, 수요 변화%, 입력 조건 요약
+  - 등급별 가격탄력성 영향 테이블 (조건부 표시)
+  - RM 권고사항 배지
+  - 배경 클릭 또는 확인 버튼으로 닫기
+- `MetricCard` 컴포넌트 신규 추가
+- 시뮬레이션 실행 완료 시 `showModal=true` → 팝업 자동 표시
+
+#### mock_simulation_engine.py — 탄력성 계수 동기화
+- 기존 단일 `price_effect` → `CLASS_ELASTICITY` 등급별 가중평균 수요 변화로 교체
+- `FUEL_LF_SENSITIVITY = -0.15`, `COMP_LF_PENALTY = -8.0` 상수화
+- 기준선 차트 데이터: `random.seed(i)` → `math.sin(i * 1337)` 시드 고정
+
+---
+
 ## 2026-05-21 — 등급별 평균 LF 차트 UI 개선 (수직 바 전환, 한글 레이블, 범례)
 
 **파일**: `frontend/src/components/Dashboard.tsx`, `backend/app/routers/dashboard.py`

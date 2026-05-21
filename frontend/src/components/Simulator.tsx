@@ -2,8 +2,9 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Legend,
 } from "recharts";
-import { FlaskConical, TrendingUp, TrendingDown, RefreshCw } from "lucide-react";
+import { FlaskConical, TrendingUp, TrendingDown, RefreshCw, X, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { useSimulationStore, SIMULATOR_ROUTES } from "../stores/simulationStore";
+import type { SimulationResultDTO } from "../types";
 
 // 노선별 기준값 (미리보기용 — store와 동기화)
 const ROUTE_BASE_UI: Record<string, { revenue: number; lf: number; demand: number }> = {
@@ -18,8 +19,171 @@ const ROUTE_BASE_UI: Record<string, { revenue: number; lf: number; demand: numbe
   "GMP-RSU":    { revenue:  2_800_000, lf: 49, demand:  27 },
 };
 
+function SimulationResultModal({
+  result,
+  params,
+  onClose,
+}: {
+  result: SimulationResultDTO;
+  params: { route: string; fuelChangePercent: number; exchangeRatePercent: number; priceChangePercent: number };
+  onClose: () => void;
+}) {
+  const revUp = result.expectedRevenueChange >= 0;
+  const demandUp = result.expectedDemandChange >= 0;
+  const severity =
+    result.expectedRevenueChange <= -10
+      ? "danger"
+      : result.expectedRevenueChange >= 5
+      ? "success"
+      : "neutral";
+
+  const severityStyle = {
+    danger:  { bar: "bg-red-500",    badge: "bg-red-50 text-red-700 border-red-200",    icon: <AlertTriangle size={18} className="text-red-500" /> },
+    success: { bar: "bg-emerald-500", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <CheckCircle size={18} className="text-emerald-500" /> },
+    neutral: { bar: "bg-violet-400", badge: "bg-violet-50 text-violet-700 border-violet-200", icon: <Info size={18} className="text-violet-500" /> },
+  }[severity];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className={`h-1.5 rounded-t-2xl ${severityStyle.bar}`} />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            {severityStyle.icon}
+            <span className="font-bold text-gray-800 text-base">시뮬레이션 결과 요약</span>
+            <span className="text-xs text-gray-400">{params.route}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* 핵심 지표 */}
+          <div className="grid grid-cols-3 gap-3">
+            <MetricCard
+              label="수익 변화"
+              value={`${revUp ? "+" : ""}${result.expectedRevenueChange}%`}
+              sub={`적정가 ${Math.round(result.optimalPriceRange.min / 10000).toLocaleString()}만 ~ ${Math.round(result.optimalPriceRange.max / 10000).toLocaleString()}만원`}
+              positive={revUp}
+            />
+            <MetricCard
+              label="수요 변화"
+              value={`${demandUp ? "+" : ""}${result.expectedDemandChange}%`}
+              sub="기준 대비 예상 예약 증감"
+              positive={demandUp}
+            />
+            <MetricCard
+              label="입력 조건"
+              value={
+                [
+                  params.fuelChangePercent !== 0 && `유가 ${params.fuelChangePercent > 0 ? "+" : ""}${params.fuelChangePercent}%`,
+                  params.exchangeRatePercent !== 0 && `환율 ${params.exchangeRatePercent > 0 ? "+" : ""}${params.exchangeRatePercent}%`,
+                  params.priceChangePercent !== 0 && `운임 ${params.priceChangePercent > 0 ? "+" : ""}${params.priceChangePercent}%`,
+                ]
+                  .filter(Boolean)
+                  .join(" / ") || "변화 없음"
+              }
+              sub=""
+              neutral
+            />
+          </div>
+
+          {/* 등급별 수요 영향 — 운임 조정이 있을 때만 표시 */}
+          {params.priceChangePercent !== 0 ? (
+          <div>
+            <div className="text-sm font-semibold text-gray-700 mb-2">
+              등급별 가격탄력성 영향
+              <span className="ml-2 text-xs font-normal text-gray-400">(IATA 단거리 아시아 국내선 기준)</span>
+            </div>
+            <div className="rounded-xl border border-gray-100 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500">
+                    <th className="text-left px-4 py-2.5 font-medium">클래스</th>
+                    <th className="text-right px-4 py-2.5 font-medium">탄력성</th>
+                    <th className="text-right px-4 py-2.5 font-medium">수요 변화</th>
+                    <th className="text-right px-4 py-2.5 font-medium">수익 변화</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.classSummary.map((cls) => (
+                    <tr key={cls.classCode} className="border-t border-gray-50 hover:bg-gray-50/50">
+                      <td className="px-4 py-2.5 font-medium text-gray-700">
+                        <span className="inline-block w-6 h-6 rounded text-center leading-6 bg-violet-100 text-violet-700 font-bold mr-2">
+                          {cls.classCode}
+                        </span>
+                        {cls.tier}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-gray-500">{cls.elasticity}</td>
+                      <td className={`px-4 py-2.5 text-right font-semibold ${cls.demandChangePct > 0 ? "text-emerald-600" : cls.demandChangePct < 0 ? "text-red-500" : "text-gray-400"}`}>
+                        {cls.demandChangePct > 0 ? "+" : ""}{cls.demandChangePct}%
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-semibold ${cls.revenueChangePct > 0 ? "text-emerald-600" : cls.revenueChangePct < 0 ? "text-red-500" : "text-gray-400"}`}>
+                        {cls.revenueChangePct > 0 ? "+" : ""}{cls.revenueChangePct}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          ) : (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-gray-50 border border-gray-100 text-xs text-gray-400">
+            <Info size={14} />
+            등급별 탄력성 영향은 <span className="font-semibold text-gray-500 mx-1">자사 운임 조정</span> 슬라이더를 0 이외로 설정할 때 표시됩니다.
+          </div>
+          )}
+
+          {/* RM 권고 */}
+          <div className={`flex gap-3 p-4 rounded-xl border ${severityStyle.badge}`}>
+            <div className="mt-0.5 shrink-0">{severityStyle.icon}</div>
+            <div>
+              <div className="text-xs font-bold mb-1">RM 권고사항</div>
+              <div className="text-xs leading-relaxed">{result.rmRecommendation}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 pb-5 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  label, value, sub, positive, neutral,
+}: {
+  label: string; value: string; sub: string; positive?: boolean; neutral?: boolean;
+}) {
+  const color = neutral
+    ? "text-gray-700"
+    : positive
+    ? "text-emerald-600"
+    : "text-red-500";
+  return (
+    <div className="bg-gray-50 rounded-xl p-3.5">
+      <div className="text-xs text-gray-400 mb-1">{label}</div>
+      <div className={`text-lg font-bold ${color} leading-tight`}>{value}</div>
+      {sub && <div className="text-xs text-gray-400 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
 export default function Simulator() {
-  const { params, result, isRunning, setParams, runSimulation, reset } = useSimulationStore();
+  const { params, result, isRunning, showModal, setParams, runSimulation, reset, closeModal } = useSimulationStore();
 
   const base = ROUTE_BASE_UI[params.route] ?? ROUTE_BASE_UI["국내선 전체"];
   const previewRevenue = base.revenue * (1 + (result?.expectedRevenueChange ?? 0) / 100);
@@ -31,6 +195,9 @@ export default function Simulator() {
 
   return (
     <div className="space-y-6" data-testid="simulator-page">
+      {showModal && result && (
+        <SimulationResultModal result={result} params={params} onClose={closeModal} />
+      )}
       <div className="flex items-center gap-2">
         <FlaskConical size={20} className="text-violet-500" />
         <h2 className="text-xl font-bold text-gray-800">시뮬레이션 (What-if Analysis)</h2>
@@ -68,13 +235,13 @@ export default function Simulator() {
           <div className="text-sm font-semibold text-gray-600 mb-3">유가 변동 (%)</div>
           <input
             data-testid="fuel-change-slider"
-            type="range" min={-30} max={50} step={5}
+            type="range" min={-50} max={50} step={5}
             value={params.fuelChangePercent}
             onChange={(e) => setParams({ fuelChangePercent: Number(e.target.value) })}
             className="w-full accent-violet-600"
           />
           <div className="flex justify-between text-xs text-gray-400 mt-1">
-            <span>-30%</span>
+            <span>-50%</span>
             <span className={`font-bold text-base ${params.fuelChangePercent > 0 ? "text-red-600" : params.fuelChangePercent < 0 ? "text-blue-600" : "text-gray-500"}`}>
               {params.fuelChangePercent > 0 ? `+${params.fuelChangePercent}%` : `${params.fuelChangePercent}%`}
             </span>
@@ -87,13 +254,13 @@ export default function Simulator() {
           <div className="text-sm font-semibold text-gray-600 mb-3">환율 변동 (%)</div>
           <input
             data-testid="exchange-rate-slider"
-            type="range" min={-20} max={30} step={5}
+            type="range" min={-30} max={30} step={5}
             value={params.exchangeRatePercent}
             onChange={(e) => setParams({ exchangeRatePercent: Number(e.target.value) })}
             className="w-full accent-violet-600"
           />
           <div className="flex justify-between text-xs text-gray-400 mt-1">
-            <span>-20%</span>
+            <span>-30%</span>
             <span className={`font-bold text-base ${params.exchangeRatePercent > 0 ? "text-red-600" : params.exchangeRatePercent < 0 ? "text-blue-600" : "text-gray-500"}`}>
               {params.exchangeRatePercent > 0 ? `+${params.exchangeRatePercent}%` : `${params.exchangeRatePercent}%`}
             </span>
@@ -107,13 +274,13 @@ export default function Simulator() {
           <div className="text-sm font-semibold text-gray-600 mb-3">자사 운임 조정 (%)</div>
           <input
             data-testid="price-change-slider"
-            type="range" min={-30} max={50} step={5}
+            type="range" min={-50} max={50} step={5}
             value={params.priceChangePercent}
             onChange={(e) => setParams({ priceChangePercent: Number(e.target.value) })}
             className="w-full accent-violet-600"
           />
           <div className="flex justify-between text-xs text-gray-400 mt-1">
-            <span>-30%</span>
+            <span>-50%</span>
             <span className={`font-bold text-base ${params.priceChangePercent > 0 ? "text-red-600" : params.priceChangePercent < 0 ? "text-blue-600" : "text-gray-500"}`}>
               {params.priceChangePercent > 0 ? `+${params.priceChangePercent}%` : `${params.priceChangePercent}%`}
             </span>
