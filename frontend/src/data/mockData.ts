@@ -758,9 +758,10 @@ const AIRCRAFT_CONFIG: Record<
   string,
   { c: number; y: number; m: number; v: number; total: number }
 > = {
-  "B737-900ER": { c: 8, y: 35, m: 95, v: 62, total: 200 },
-  "B737-800": { c: 8, y: 28, m: 76, v: 46, total: 158 },
-  "A220-300": { c: 4, y: 22, m: 62, v: 42, total: 130 },
+  // V(특가): 전체의 약 10% — 적게 열고 빠르게 소진
+  "B737-900ER": { c: 8, y: 52, m: 120, v: 20, total: 200 },
+  "B737-800":   { c: 8, y: 41, m: 94,  v: 15, total: 158 },
+  "A220-300":   { c: 4, y: 31, m: 83,  v: 12, total: 130 },
 };
 
 const ROUTE_SCHEDULES: Record<string, RouteSchedule[]> = {
@@ -1338,67 +1339,54 @@ export function buildDashboardFlights(
     // 이코노미 수요 추정 (총 수요의 92% = Prestige 제외)
     const ecoDemand = (lf / 100) * cfg.total * 0.92;
 
-    // sold 먼저 추정 (EMSRb minSeats 에 사용)
-    const soldC = Math.min(
-      cfg.c,
-      Math.round(cfg.c * Math.min(soldRatio * 1.15, 1)),
-    );
-    const soldYraw = Math.round(ecoDemand * 0.2 * soldRatio * 1.05);
-    const soldMraw = Math.round(ecoDemand * 0.48 * soldRatio);
-    const soldVraw = Math.round(ecoDemand * 0.32 * soldRatio * 0.85);
+    // ── C(프레스티지) 판매량 ────────────────────────────────────────────────
+    const soldC = Math.min(cfg.c, Math.round(cfg.c * Math.min(soldRatio * 1.15, 1)));
 
-    // 특가 V: LF 높거나 성수기면 Closed 처리
-    const vClosed = lf >= 82 || peakMul >= 1.25;
+    // ── V(특가) 판매 fill rate: LF가 높을수록 거의 매진, 낮아도 70% 이상 ──
+    // 특가는 공급이 적어 수요>공급 상태가 일반적
+    // 인기 노선(lf>=75) → 거의 Sold Out, 비인기(lf<50) → 70~80% 소진
+    const vFillRate = lf >= 85 ? 1.0
+      : lf >= 75 ? 0.95
+      : lf >= 60 ? 0.88
+      : lf >= 50 ? 0.78
+      : 0.68;
+    const soldVraw = Math.round(cfg.v * vFillRate);
 
-    // EMSRb 입력 (price 내림차순): V가 Closed면 pool에서 제외, Y/M만 분배
-    const econInputs: EMSRbInput[] = vClosed
-      ? [
-          {
-            code: "Y",
-            price: priceY,
-            meanDemand: ecoDemand * 0.2,
-            stdDemand: ecoDemand * 0.2 * cv,
-            minSeats: Math.max(0, soldYraw),
-          },
-          {
-            code: "M",
-            price: priceM,
-            meanDemand: ecoDemand * 0.48,
-            stdDemand: ecoDemand * 0.48 * cv,
-            minSeats: Math.max(0, soldMraw),
-          },
-        ]
-      : [
-          {
-            code: "Y",
-            price: priceY,
-            meanDemand: ecoDemand * 0.2,
-            stdDemand: ecoDemand * 0.2 * cv,
-            minSeats: Math.max(0, soldYraw),
-          },
-          {
-            code: "M",
-            price: priceM,
-            meanDemand: ecoDemand * 0.48,
-            stdDemand: ecoDemand * 0.48 * cv,
-            minSeats: Math.max(0, soldMraw),
-          },
-          {
-            code: "V",
-            price: priceV,
-            meanDemand: ecoDemand * 0.32,
-            stdDemand: ecoDemand * 0.32 * cv,
-            minSeats: Math.max(0, soldVraw),
-          },
-        ];
+    // ── Y/M 판매량: soldRatio 중복 제거 (ecoDemand에 이미 lf 반영됨) ───────
+    // V가 먼저 소진되므로 Y/M이 받는 실수요는 ecoDemand에서 soldVraw를 뺀 나머지
+    const remainDemand = Math.max(0, ecoDemand - soldVraw);
+    const soldYraw = Math.round(remainDemand * 0.29);   // Y: 잔여 수요의 29%
+    const soldMraw = Math.round(remainDemand * 0.71);   // M: 잔여 수요의 71%
 
-    const vReservedSeats = vClosed ? cfg.v : 0; // Closed면 cfg.v 고정
-    const emsrbPool = econTotal - vReservedSeats;
-    const econBuckets = emsrb(econInputs, emsrbPool);
+    // ── V Closed 조건: LF가 매우 높거나 성수기 ──────────────────────────────
+    const vClosed = lf >= 90 || peakMul >= 1.25;
+
+    // ── V는 EMSRb에서 분리: 정책 좌석(cfg.v) 고정 배정 ──────────────────────
+    // 실제 항공사에서 특가 좌석은 사전 정책으로 소량 배정하고 EMSRb는 Y/M만 담당
+    const seatsV = cfg.v;
+
+    // ── EMSRb: Y·M만 (econTotal - cfg.v) 풀에서 분배 ────────────────────────
+    const ymPool = econTotal - cfg.v;
+    const econInputs: EMSRbInput[] = [
+      {
+        code: "Y",
+        price: priceY,
+        meanDemand: ecoDemand * 0.29,
+        stdDemand: ecoDemand * 0.29 * cv,
+        minSeats: Math.max(0, soldYraw),
+      },
+      {
+        code: "M",
+        price: priceM,
+        meanDemand: ecoDemand * 0.71,
+        stdDemand: ecoDemand * 0.71 * cv,
+        minSeats: Math.max(0, soldMraw),
+      },
+    ];
+    const econBuckets = emsrb(econInputs, ymPool);
 
     const seatsY = econBuckets[0];
     const seatsM = econBuckets[1];
-    const seatsV = vClosed ? cfg.v : econBuckets[2];
 
     const soldY = Math.min(seatsY, soldYraw);
     const soldM = Math.min(seatsM, soldMraw);

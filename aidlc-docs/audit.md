@@ -1062,3 +1062,67 @@ set((state) => ({ params: { ...defaultParams, route: state.params.route }, resul
 - aidlc-docs/changelog.md: v7 Phase3 변경 이력 기록
 
 ---
+
+## [global-refresh-faremanagement] Construction — 전역 새로고침 버튼 운임관리 연동 및 내부 버튼 제거
+**Timestamp**: 2026-05-21T23:00:00Z
+**User Input**: "운임관리에서 새로고침 버튼이 전체 우측 상단에 새로고침 아이콘 대신에 들어가고(기능은 그대로 유지), 운임관리에서는 제외해야 될 것 같아. 그리고 새로고침 버튼 클릭 시에 대시보드, 운임관리, 경쟁사 모니터링, 보고서 등 각 탭에 연동이 필요한 곳에 연동되어서 실제로 각 탭에서 값들이 변경되어야 할 것 같아."
+**AI Response**: "FareManagement에 refreshKey prop 추가, useEffect로 외부 새로고침 감지 시 simulateCustomerActivity 실행. 내부 새로고침 버튼·마지막 업데이트 텍스트 제거. App.tsx에서 key 대신 refreshKey prop 전달(리마운트 방지). Dashboard/CompetitorMonitor는 기존 key/refreshKey 연동 유지."
+**Context**: CONSTRUCTION PHASE - UX 개선 (전역 새로고침 통합)
+
+### 변경 사항
+- `frontend/src/components/FareManagement.tsx`: props `{ refreshKey?: number }` 추가, `useEffect([refreshKey])` 내부 고객 활동 시뮬레이션 실행, 내부 새로고침 버튼 및 `lastRefreshTime` state 제거
+- `frontend/src/App.tsx`: `<FareManagement key={refreshKey} />` → `<FareManagement refreshKey={refreshKey} />`
+
+---
+
+## [dashboard-mock-data-diversify] Construction — 대시보드 Mock 데이터 다양화 (항공사 좌석 판매 패턴 반영)
+**Timestamp**: 2026-05-21T23:05:00Z
+**User Input**: "대시보드에 나오는 그래프들에 데이터 분포를 더 다양하게 해줘. 현재 너무 비슷한 수치로 되어 있는 것 같아서 수정해줘. 그리고 특가나 인기노선의 경우 L/F가 높아야 할 것 같은데 실제 항공사에서 좌석이 점유되는 과정을 토대로 다시 생성해줘."
+**AI Response**: "MOCK_REVENUE_HISTORY: 주말(금·토) 급등/화·수 저점 패턴 적용, 노선별 격차 확대. MOCK_CLASS_LF: V(특가)→M→Y→C 판매 순서 반영, 인기노선 V 97~99%/비인기노선 V 48~57%. MOCK_ROUTE_LF: 오전 편 높음/오후 늦은 편 낮음, 인기노선 vs 비인기노선 격차 확대. MOCK_KPI: 노선별 수익·LF 대폭 차별화."
+**Context**: CONSTRUCTION PHASE - 데이터 현실성 개선
+
+### 변경 사항
+- `frontend/src/components/Dashboard.tsx`: MOCK_REVENUE_HISTORY/MOCK_CLASS_LF/MOCK_ROUTE_LF/MOCK_KPI 전면 재설계
+
+---
+
+## [dashboard-flights-sync] Construction — 대시보드-운임관리 실시간 연동 (공유 flightsStore)
+**Timestamp**: 2026-05-21T23:20:00Z
+**User Input**: "새로고침을 누르면 가격이 운임관리에 L/F가 바뀌니까 대시보드에서도 연결되어서 바뀌어야 할 것 같은데 그대로야. 확인해줘."
+**AI Response**: "원인: Dashboard summary와 FareManagement flights가 완전히 분리된 로컬 상태였음. 공유 Zustand 스토어(flightsStore) 신규 생성. FareManagement의 모든 setFlights 호출을 setFlightsAndSync로 교체하여 flightsStore에 동기화. Dashboard에서 flightsByRoute 구독 후 useMemo로 편명별 LF·등급별 LF·평균 LF·수익·예약 수 실시간 재계산."
+**Context**: CONSTRUCTION PHASE - 실시간 데이터 연동
+
+### 변경 사항
+- `frontend/src/stores/flightsStore.ts`: 신규 생성 — 노선별 DashboardFlight[] 전역 상태
+- `frontend/src/components/FareManagement.tsx`: `setFlightsAndSync` 래퍼 추가, 모든 flights 업데이트 시 flightsStore 동기화
+- `frontend/src/components/Dashboard.tsx`: `useFlightsStore` 구독, `useMemo`로 liveStats 파생 (routeLf/classLf/avgLf/todayRevenue/todayBookings)
+
+---
+
+## [dashboard-calculation-log] Construction — 대시보드 계산 과정 콘솔 로그 추가
+**Timestamp**: 2026-05-21T23:25:00Z
+**User Input**: "대시보드에서 왜 그렇게 그래프가 나오게 되었는지 설명을 로그로 남겨줘."
+**AI Response**: "liveStats useMemo 블록 내 계산 완료 후 console.group 계층으로 편명별 LF 테이블·등급별 LF 계산식·편명별 수익 세부 내역·최종 집계를 출력. 노선 변경 또는 새로고침마다 자동 출력."
+**Context**: CONSTRUCTION PHASE - 디버깅/투명성 개선
+
+### 변경 사항
+- `frontend/src/components/Dashboard.tsx`: liveStats useMemo 내 편명별 LF table·등급별 LF 계산식·수익 세부 내역·최종 집계 console.group 로그 추가
+
+---
+
+## [v-lf-fix-b-plan] Construction — V(특가) L/F 역전 버그 수정 (B안: EMSRb 분리)
+**Timestamp**: 2026-05-21T23:30:00Z
+**User Input**: "근데 상식적으로 일반석 특가가 평소에 가장 적게 열어주고, 가장 빠르게 팔릴 것 같은데 L/F가 제일 낮은게 이상한 것 같거든. → B안으로 해줘."
+**AI Response**: "원인 1: soldVraw에 soldRatio 이중 곱셈 + 0.85 패널티로 V 판매량 과소 산정. 원인 2: EMSRb에 V를 포함시키면 풀 172석에서 V meanDemand(30석)에 비해 bucket이 70~80석으로 배분되어 seatsV 비대화 → V L/F 25%로 역전. 해결: V를 EMSRb에서 완전 분리(seatsV=cfg.v 고정), Y/M만 ymPool에서 EMSRb 분배, soldVraw를 cfg.v×vFillRate로 교체."
+**Context**: CONSTRUCTION PHASE - 데이터 현실성 개선 (알고리즘 버그 수정)
+
+### 변경 사항
+- `frontend/src/data/mockData.ts`:
+  - `AIRCRAFT_CONFIG` V 좌석 축소: B737-900ER 62→20, B737-800 46→15, A220-300 42→12 (전체의 ~10%)
+  - `soldVraw`: `ecoDemand×0.32×soldRatio×0.85` → `cfg.v × vFillRate` (lf 구간별 68~100%)
+  - `soldYraw/soldMraw`: `soldRatio` 이중 제거 → `remainDemand(ecoDemand-soldV)` 기반
+  - `seatsV = cfg.v` 고정 (EMSRb 분리)
+  - `ymPool = econTotal - cfg.v`로 Y/M만 EMSRb 분배
+  - `vClosed` 임계값: 82 → 90
+
+---

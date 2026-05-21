@@ -4,6 +4,75 @@
 
 ---
 
+## 2026-05-21 — V(특가) L/F 역전 버그 수정 (EMSRb 분리, B안)
+
+**파일**: `frontend/src/data/mockData.ts`
+
+### 변경 내용
+- `AIRCRAFT_CONFIG` V 좌석 수 축소 (전체의 ~10%): B737-900ER 62→20, B737-800 46→15, A220-300 42→12
+- `soldVraw` 계산 교체: `ecoDemand×0.32×soldRatio×0.85` (이중 할인) → `cfg.v × vFillRate` (lf 구간별 68~100%)
+- `soldYraw/soldMraw`: soldRatio 이중 적용 제거, V 판매 후 잔여 수요(`ecoDemand - soldVraw`) 기반으로 변경
+- V를 EMSRb에서 완전 분리: `seatsV = cfg.v` 고정, Y/M만 `ymPool = econTotal - cfg.v`에서 EMSRb 분배
+- `vClosed` 임계값 82 → 90 (Sold Out 표시 정상화)
+
+### 이유
+- 기존 soldVraw에 soldRatio 이중 곱셈으로 V 판매량 과소 산정
+- EMSRb 포함 시 풀 대비 V meanDemand 비율이 낮아 seatsV가 70~80석으로 배분되어 V L/F 역전
+
+---
+
+## 2026-05-21 — 대시보드 계산 과정 콘솔 로그 추가
+
+**파일**: `frontend/src/components/Dashboard.tsx`
+
+### 변경 내용
+- `liveStats` useMemo 블록 내 계산 완료 후 console.group 계층으로 상세 로그 출력
+  - 편명별 L/F 테이블 (편명·출발시각·노선·LF·상태)
+  - 등급별 L/F 계산식 (판매좌석/전체좌석×100 = LF%)
+  - 편명별 수익 세부 내역 (클래스별 가격×판매수량)
+  - 최종 집계 (대상 편수·평균 LF·총 수익·총 예약)
+- 노선 변경 또는 새로고침 시 자동 출력
+
+---
+
+## 2026-05-21 — 대시보드-운임관리 실시간 연동 (공유 flightsStore)
+
+**파일**: `frontend/src/stores/flightsStore.ts` (신규), `frontend/src/components/FareManagement.tsx`, `frontend/src/components/Dashboard.tsx`
+
+### 변경 내용
+- `flightsStore.ts` 신규 생성: 노선별 `DashboardFlight[]` Zustand 전역 상태
+- `FareManagement`: 모든 flights 업데이트(`setFlights`) 호출을 `setFlightsAndSync`로 교체 → flightsStore 자동 동기화
+- `Dashboard`: `useFlightsStore` 구독, `useMemo`로 liveStats 실시간 파생
+  - 편명별 LF, 등급별 LF, 평균 LF, 당일 수익, 예약 수
+
+### 이유
+- 기존 Dashboard summary와 FareManagement flights가 완전히 분리된 로컬 상태여서 새로고침 후 대시보드에 미반영
+
+---
+
+## 2026-05-21 — 전역 새로고침 버튼 운임관리 연동 및 내부 버튼 제거
+
+**파일**: `frontend/src/components/FareManagement.tsx`, `frontend/src/App.tsx`
+
+### 변경 내용
+- `FareManagement`: `{ refreshKey?: number }` prop 추가, `useEffect([refreshKey])` 감지 시 `simulateCustomerActivity` 실행
+- `FareManagement`: 내부 "새로고침" 버튼 및 "마지막 업데이트" 텍스트 제거, `lastRefreshTime` state 제거
+- `App.tsx`: `<FareManagement key={refreshKey} />` → `<FareManagement refreshKey={refreshKey} />` (리마운트 방지)
+
+---
+
+## 2026-05-21 — 대시보드 Mock 데이터 다양화 (항공사 좌석 판매 패턴 반영)
+
+**파일**: `frontend/src/components/Dashboard.tsx`
+
+### 변경 내용
+- `MOCK_REVENUE_HISTORY`: 주말(금·토) 급등/화·수 저점 패턴 적용, 노선별 수익 격차 확대
+- `MOCK_CLASS_LF`: V(특가)→M→Y→C 판매 순서 반영, 인기노선 V 97~99%/비인기 V 48~57%
+- `MOCK_ROUTE_LF`: 오전편 높음/오후 늦은 편 낮음, 인기·비인기 노선 편명 LF 격차 확대
+- `MOCK_KPI`: 노선별 수익·LF 대폭 차별화 (ICN-CJU avgLf 88% vs GMP-RSU avgLf 33%)
+
+---
+
 ## 2026-05-21 — 시뮬레이터 슬라이더 범위 대칭화
 
 **파일**: `frontend/src/components/Simulator.tsx`

@@ -170,7 +170,7 @@ export default function App() {
 
         <div className={page === "fares" ? "" : "p-4 sm:p-8"}>
           {page === "dashboard"  && <Dashboard key={refreshKey} />}
-          {page === "fares"      && <FareManagement key={refreshKey} />}
+          {page === "fares"      && <FareManagement refreshKey={refreshKey} />}
           {page === "competitor" && <CompetitorMonitor refreshKey={refreshKey} />}
           {page === "simulator"  && <Simulator key={refreshKey} />}
           {page === "report"     && <Report key={refreshKey} />}

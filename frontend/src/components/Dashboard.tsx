@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Cell,
@@ -6,6 +6,7 @@ import {
 import { TrendingUp, Users, Plane, AlertCircle } from "lucide-react";
 import { KE_DOMESTIC_ROUTES } from "../data/mockData";
 import apiClient from "../api/apiClient";
+import { useFlightsStore } from "../stores/flightsStore";
 
 const BRAND = "#002561";
 
@@ -38,162 +39,197 @@ interface DashboardSummary {
 }
 
 // ── Mock fallback ─────────────────────────────────────────────────────────────
+// 수익 추이: 5/15(목)~5/24(토). 금·토·일 주말 급등, 화·수 최저, 특가 프로모션 이벤트 반영
 const MOCK_REVENUE_HISTORY: Record<string, { date: string; revenue: number; bookings: number }[]> = {
+  // 국내선 전체 — 주말(16토·17일·23금·24토) 급등, 화19·수20 저점
   all: [
-    { date: "5/15", revenue: 268_400_000, bookings: 2581 },
-    { date: "5/16", revenue: 301_200_000, bookings: 2902 },
-    { date: "5/17", revenue: 315_900_000, bookings: 3048 },
-    { date: "5/18", revenue: 334_400_000, bookings: 3219 },
-    { date: "5/19", revenue: 351_200_000, bookings: 3387 },
-    { date: "5/20", revenue: 318_700_000, bookings: 3063 },
-    { date: "5/21", revenue: 344_300_000, bookings: 3325 },
-    { date: "5/22", revenue: 362_100_000, bookings: 3491 },
-    { date: "5/23", revenue: 328_600_000, bookings: 3167 },
-    { date: "5/24", revenue: 345_900_000, bookings: 3330 },
+    { date: "5/15(목)", revenue: 312_400_000, bookings: 3_012 },
+    { date: "5/16(금)", revenue: 468_700_000, bookings: 4_521 },
+    { date: "5/17(토)", revenue: 531_200_000, bookings: 5_118 },
+    { date: "5/18(일)", revenue: 489_300_000, bookings: 4_712 },
+    { date: "5/19(월)", revenue: 271_800_000, bookings: 2_618 },
+    { date: "5/20(화)", revenue: 243_100_000, bookings: 2_341 },
+    { date: "5/21(수)", revenue: 258_600_000, bookings: 2_493 },
+    { date: "5/22(목)", revenue: 334_200_000, bookings: 3_221 },
+    { date: "5/23(금)", revenue: 492_500_000, bookings: 4_748 },
+    { date: "5/24(토)", revenue: 558_900_000, bookings: 5_389 },
   ],
+  // GMP-CJU — 최대 수요 노선, 주말 거의 매진
   "GMP-CJU": [
-    { date: "5/15", revenue: 44_300_000, bookings: 425 },
-    { date: "5/16", revenue: 67_200_000, bookings: 648 },
-    { date: "5/17", revenue: 72_400_000, bookings: 697 },
-    { date: "5/18", revenue: 81_600_000, bookings: 789 },
-    { date: "5/19", revenue: 88_200_000, bookings: 851 },
-    { date: "5/20", revenue: 76_400_000, bookings: 736 },
-    { date: "5/21", revenue: 82_400_000, bookings: 795 },
-    { date: "5/22", revenue: 91_100_000, bookings: 879 },
-    { date: "5/23", revenue: 79_300_000, bookings: 765 },
-    { date: "5/24", revenue: 85_000_000, bookings: 820 },
+    { date: "5/15(목)", revenue:  78_600_000, bookings:  758 },
+    { date: "5/16(금)", revenue: 128_400_000, bookings: 1_238 },
+    { date: "5/17(토)", revenue: 151_700_000, bookings: 1_463 },
+    { date: "5/18(일)", revenue: 139_200_000, bookings: 1_342 },
+    { date: "5/19(월)", revenue:  61_300_000, bookings:  591 },
+    { date: "5/20(화)", revenue:  54_800_000, bookings:  528 },
+    { date: "5/21(수)", revenue:  63_500_000, bookings:  612 },
+    { date: "5/22(목)", revenue:  86_400_000, bookings:  833 },
+    { date: "5/23(금)", revenue: 132_900_000, bookings: 1_281 },
+    { date: "5/24(토)", revenue: 158_200_000, bookings: 1_525 },
   ],
-  "GMP-PUS": [
-    { date: "5/15", revenue: 27_800_000, bookings: 267 },
-    { date: "5/16", revenue: 34_400_000, bookings: 330 },
-    { date: "5/17", revenue: 38_100_000, bookings: 366 },
-    { date: "5/18", revenue: 41_200_000, bookings: 396 },
-    { date: "5/19", revenue: 44_600_000, bookings: 429 },
-    { date: "5/20", revenue: 39_100_000, bookings: 376 },
-    { date: "5/21", revenue: 42_300_000, bookings: 407 },
-    { date: "5/22", revenue: 46_800_000, bookings: 450 },
-    { date: "5/23", revenue: 40_100_000, bookings: 386 },
-    { date: "5/24", revenue: 43_000_000, bookings: 414 },
-  ],
+  // ICN-CJU — 인천발 프리미엄, 평일도 LF 높음
   "ICN-CJU": [
-    { date: "5/15", revenue: 48_600_000, bookings: 468 },
-    { date: "5/16", revenue: 56_800_000, bookings: 547 },
-    { date: "5/17", revenue: 61_200_000, bookings: 589 },
-    { date: "5/18", revenue: 67_400_000, bookings: 649 },
-    { date: "5/19", revenue: 71_900_000, bookings: 693 },
-    { date: "5/20", revenue: 63_200_000, bookings: 609 },
-    { date: "5/21", revenue: 68_900_000, bookings: 663 },
-    { date: "5/22", revenue: 74_400_000, bookings: 717 },
-    { date: "5/23", revenue: 65_700_000, bookings: 633 },
-    { date: "5/24", revenue: 70_000_000, bookings: 674 },
+    { date: "5/15(목)", revenue:  72_100_000, bookings:  694 },
+    { date: "5/16(금)", revenue: 103_400_000, bookings:  996 },
+    { date: "5/17(토)", revenue: 118_800_000, bookings: 1_144 },
+    { date: "5/18(일)", revenue: 110_200_000, bookings: 1_061 },
+    { date: "5/19(월)", revenue:  58_700_000, bookings:  565 },
+    { date: "5/20(화)", revenue:  52_300_000, bookings:  504 },
+    { date: "5/21(수)", revenue:  61_900_000, bookings:  596 },
+    { date: "5/22(목)", revenue:  78_500_000, bookings:  756 },
+    { date: "5/23(금)", revenue: 108_200_000, bookings: 1_042 },
+    { date: "5/24(토)", revenue: 122_600_000, bookings: 1_181 },
   ],
+  // GMP-PUS — 중간 노선, 주말 상승폭 완만
+  "GMP-PUS": [
+    { date: "5/15(목)", revenue: 33_200_000, bookings:  320 },
+    { date: "5/16(금)", revenue: 52_700_000, bookings:  508 },
+    { date: "5/17(토)", revenue: 61_400_000, bookings:  591 },
+    { date: "5/18(일)", revenue: 55_100_000, bookings:  531 },
+    { date: "5/19(월)", revenue: 24_800_000, bookings:  239 },
+    { date: "5/20(화)", revenue: 21_600_000, bookings:  208 },
+    { date: "5/21(수)", revenue: 26_300_000, bookings:  253 },
+    { date: "5/22(목)", revenue: 38_100_000, bookings:  367 },
+    { date: "5/23(금)", revenue: 55_900_000, bookings:  539 },
+    { date: "5/24(토)", revenue: 64_800_000, bookings:  624 },
+  ],
+  // GMP-TAE — 지방 노선, 전반적으로 낮고 변동 큼
   "GMP-TAE": [
-    { date: "5/15", revenue: 10_800_000, bookings: 103 },
-    { date: "5/16", revenue: 13_700_000, bookings: 132 },
-    { date: "5/17", revenue: 15_200_000, bookings: 146 },
-    { date: "5/18", revenue: 16_800_000, bookings: 162 },
-    { date: "5/19", revenue: 18_100_000, bookings: 174 },
-    { date: "5/20", revenue: 15_400_000, bookings: 148 },
-    { date: "5/21", revenue: 16_900_000, bookings: 163 },
-    { date: "5/22", revenue: 18_700_000, bookings: 180 },
-    { date: "5/23", revenue: 15_900_000, bookings: 153 },
-    { date: "5/24", revenue: 17_200_000, bookings: 166 },
+    { date: "5/15(목)", revenue:  9_800_000, bookings:  94 },
+    { date: "5/16(금)", revenue: 18_400_000, bookings: 177 },
+    { date: "5/17(토)", revenue: 22_100_000, bookings: 213 },
+    { date: "5/18(일)", revenue: 19_700_000, bookings: 190 },
+    { date: "5/19(월)", revenue:  6_200_000, bookings:  60 },
+    { date: "5/20(화)", revenue:  5_100_000, bookings:  49 },
+    { date: "5/21(수)", revenue:  7_400_000, bookings:  71 },
+    { date: "5/22(목)", revenue: 11_600_000, bookings: 112 },
+    { date: "5/23(금)", revenue: 19_800_000, bookings: 191 },
+    { date: "5/24(토)", revenue: 24_300_000, bookings: 234 },
   ],
+  // GMP-KWJ — 저수요 노선
   "GMP-KWJ": [
-    { date: "5/15", revenue:  9_100_000, bookings: 87 },
-    { date: "5/16", revenue: 11_400_000, bookings: 110 },
-    { date: "5/17", revenue: 12_800_000, bookings: 123 },
-    { date: "5/18", revenue: 13_900_000, bookings: 134 },
-    { date: "5/19", revenue: 14_800_000, bookings: 142 },
-    { date: "5/20", revenue: 12_600_000, bookings: 121 },
-    { date: "5/21", revenue: 13_700_000, bookings: 132 },
-    { date: "5/22", revenue: 15_200_000, bookings: 146 },
-    { date: "5/23", revenue: 13_100_000, bookings: 126 },
-    { date: "5/24", revenue: 14_000_000, bookings: 135 },
+    { date: "5/15(목)", revenue:  8_100_000, bookings:  78 },
+    { date: "5/16(금)", revenue: 14_600_000, bookings: 141 },
+    { date: "5/17(토)", revenue: 17_200_000, bookings: 166 },
+    { date: "5/18(일)", revenue: 15_400_000, bookings: 148 },
+    { date: "5/19(월)", revenue:  5_300_000, bookings:  51 },
+    { date: "5/20(화)", revenue:  4_600_000, bookings:  44 },
+    { date: "5/21(수)", revenue:  6_100_000, bookings:  59 },
+    { date: "5/22(목)", revenue:  9_700_000, bookings:  93 },
+    { date: "5/23(금)", revenue: 15_800_000, bookings: 152 },
+    { date: "5/24(토)", revenue: 19_100_000, bookings: 184 },
   ],
+  // ICN-PUS — 중간, 출장 수요로 평일도 어느 정도 유지
   "ICN-PUS": [
-    { date: "5/15", revenue: 26_100_000, bookings: 251 },
-    { date: "5/16", revenue: 31_800_000, bookings: 306 },
-    { date: "5/17", revenue: 34_600_000, bookings: 333 },
-    { date: "5/18", revenue: 38_200_000, bookings: 368 },
-    { date: "5/19", revenue: 41_100_000, bookings: 396 },
-    { date: "5/20", revenue: 35_800_000, bookings: 345 },
-    { date: "5/21", revenue: 39_200_000, bookings: 378 },
-    { date: "5/22", revenue: 43_500_000, bookings: 419 },
-    { date: "5/23", revenue: 37_400_000, bookings: 360 },
-    { date: "5/24", revenue: 40_000_000, bookings: 385 },
+    { date: "5/15(목)", revenue: 34_400_000, bookings:  331 },
+    { date: "5/16(금)", revenue: 51_200_000, bookings:  493 },
+    { date: "5/17(토)", revenue: 58_600_000, bookings:  564 },
+    { date: "5/18(일)", revenue: 52_100_000, bookings:  502 },
+    { date: "5/19(월)", revenue: 28_700_000, bookings:  276 },
+    { date: "5/20(화)", revenue: 24_300_000, bookings:  234 },
+    { date: "5/21(수)", revenue: 29_800_000, bookings:  287 },
+    { date: "5/22(목)", revenue: 38_600_000, bookings:  372 },
+    { date: "5/23(금)", revenue: 53_400_000, bookings:  514 },
+    { date: "5/24(토)", revenue: 61_700_000, bookings:  594 },
   ],
+  // GMP-KPO — 소도시 노선
   "GMP-KPO": [
-    { date: "5/15", revenue:  8_600_000, bookings: 82 },
-    { date: "5/16", revenue: 10_900_000, bookings: 105 },
-    { date: "5/17", revenue: 12_300_000, bookings: 118 },
-    { date: "5/18", revenue: 13_400_000, bookings: 129 },
-    { date: "5/19", revenue: 14_300_000, bookings: 138 },
-    { date: "5/20", revenue: 12_100_000, bookings: 116 },
-    { date: "5/21", revenue: 13_200_000, bookings: 127 },
-    { date: "5/22", revenue: 14_600_000, bookings: 141 },
-    { date: "5/23", revenue: 12_500_000, bookings: 120 },
-    { date: "5/24", revenue: 13_400_000, bookings: 129 },
+    { date: "5/15(목)", revenue:  7_300_000, bookings:  70 },
+    { date: "5/16(금)", revenue: 13_100_000, bookings: 126 },
+    { date: "5/17(토)", revenue: 15_800_000, bookings: 152 },
+    { date: "5/18(일)", revenue: 13_400_000, bookings: 129 },
+    { date: "5/19(월)", revenue:  4_900_000, bookings:  47 },
+    { date: "5/20(화)", revenue:  4_100_000, bookings:  40 },
+    { date: "5/21(수)", revenue:  5_600_000, bookings:  54 },
+    { date: "5/22(목)", revenue:  8_900_000, bookings:  86 },
+    { date: "5/23(금)", revenue: 14_200_000, bookings: 137 },
+    { date: "5/24(토)", revenue: 17_100_000, bookings: 165 },
   ],
+  // GMP-RSU — 최저 수요, 주중 거의 빈자리
   "GMP-RSU": [
-    { date: "5/15", revenue:  7_200_000, bookings: 69 },
-    { date: "5/16", revenue:  9_300_000, bookings: 89 },
-    { date: "5/17", revenue: 10_600_000, bookings: 102 },
-    { date: "5/18", revenue: 11_500_000, bookings: 111 },
-    { date: "5/19", revenue: 12_400_000, bookings: 119 },
-    { date: "5/20", revenue: 10_500_000, bookings: 101 },
-    { date: "5/21", revenue: 11_400_000, bookings: 110 },
-    { date: "5/22", revenue: 12_800_000, bookings: 123 },
-    { date: "5/23", revenue: 10_900_000, bookings: 105 },
-    { date: "5/24", revenue: 11_700_000, bookings: 113 },
+    { date: "5/15(목)", revenue:  5_400_000, bookings:  52 },
+    { date: "5/16(금)", revenue: 10_200_000, bookings:  98 },
+    { date: "5/17(토)", revenue: 13_100_000, bookings: 126 },
+    { date: "5/18(일)", revenue: 11_600_000, bookings: 112 },
+    { date: "5/19(월)", revenue:  3_200_000, bookings:  31 },
+    { date: "5/20(화)", revenue:  2_800_000, bookings:  27 },
+    { date: "5/21(수)", revenue:  3_700_000, bookings:  36 },
+    { date: "5/22(목)", revenue:  6_100_000, bookings:  59 },
+    { date: "5/23(금)", revenue: 10_800_000, bookings: 104 },
+    { date: "5/24(토)", revenue: 14_200_000, bookings: 137 },
   ],
 };
 
+// 실제 항공사 좌석 판매 순서: V(특가) 최초 오픈→M(할인)→Y(정상)→C(프레스티지)
+// 인기 노선(ICN-CJU, GMP-CJU): V·M 거의 매진, Y 높음, C 중고
+// 비인기 노선(GMP-RSU, GMP-TAE): V도 50~60% 수준, C 상대적으로 높음(출장자)
 const MOCK_CLASS_LF: Record<string, { label: string; lf: number }[]> = {
-  all:       [{ label: "C (프레스티지)", lf: 71.3 }, { label: "Y (일반 정상)", lf: 68.2 }, { label: "M (일반 할인)", lf: 79.5 }, { label: "V (특가)", lf: 55.8 }],
-  "GMP-CJU": [{ label: "C (프레스티지)", lf: 78.2 }, { label: "Y (일반 정상)", lf: 76.5 }, { label: "M (일반 할인)", lf: 84.3 }, { label: "V (특가)", lf: 63.1 }],
-  "GMP-PUS": [{ label: "C (프레스티지)", lf: 62.4 }, { label: "Y (일반 정상)", lf: 59.8 }, { label: "M (일반 할인)", lf: 68.2 }, { label: "V (특가)", lf: 47.3 }],
-  "ICN-CJU": [{ label: "C (프레스티지)", lf: 88.7 }, { label: "Y (일반 정상)", lf: 85.4 }, { label: "M (일반 할인)", lf: 91.2 }, { label: "V (특가)", lf: 72.6 }],
-  "GMP-TAE": [{ label: "C (프레스티지)", lf: 53.1 }, { label: "Y (일반 정상)", lf: 50.4 }, { label: "M (일반 할인)", lf: 58.7 }, { label: "V (특가)", lf: 38.9 }],
-  "GMP-KWJ": [{ label: "C (프레스티지)", lf: 57.8 }, { label: "Y (일반 정상)", lf: 54.6 }, { label: "M (일반 할인)", lf: 63.4 }, { label: "V (특가)", lf: 42.1 }],
-  "ICN-PUS": [{ label: "C (프레스티지)", lf: 66.3 }, { label: "Y (일반 정상)", lf: 63.8 }, { label: "M (일반 할인)", lf: 72.5 }, { label: "V (특가)", lf: 51.4 }],
-  "GMP-KPO": [{ label: "C (프레스티지)", lf: 55.6 }, { label: "Y (일반 정상)", lf: 52.9 }, { label: "M (일반 할인)", lf: 61.3 }, { label: "V (특가)", lf: 41.7 }],
-  "GMP-RSU": [{ label: "C (프레스티지)", lf: 49.2 }, { label: "Y (일반 정상)", lf: 46.8 }, { label: "M (일반 할인)", lf: 55.1 }, { label: "V (특가)", lf: 35.4 }],
+  all:       [{ label: "C (프레스티지)", lf: 68.4 }, { label: "Y (일반 정상)", lf: 71.2 }, { label: "M (일반 할인)", lf: 82.7 }, { label: "V (특가)",      lf: 91.5 }],
+  "GMP-CJU": [{ label: "C (프레스티지)", lf: 76.3 }, { label: "Y (일반 정상)", lf: 81.4 }, { label: "M (일반 할인)", lf: 93.8 }, { label: "V (특가)",      lf: 97.2 }],
+  "ICN-CJU": [{ label: "C (프레스티지)", lf: 82.1 }, { label: "Y (일반 정상)", lf: 87.6 }, { label: "M (일반 할인)", lf: 95.4 }, { label: "V (특가)",      lf: 99.1 }],
+  "GMP-PUS": [{ label: "C (프레스티지)", lf: 58.7 }, { label: "Y (일반 정상)", lf: 61.3 }, { label: "M (일반 할인)", lf: 73.9 }, { label: "V (특가)",      lf: 84.6 }],
+  "ICN-PUS": [{ label: "C (프레스티지)", lf: 63.2 }, { label: "Y (일반 정상)", lf: 67.8 }, { label: "M (일반 할인)", lf: 78.4 }, { label: "V (특가)",      lf: 88.3 }],
+  "GMP-TAE": [{ label: "C (프레스티지)", lf: 47.6 }, { label: "Y (일반 정상)", lf: 38.4 }, { label: "M (일반 할인)", lf: 44.2 }, { label: "V (특가)",      lf: 56.8 }],
+  "GMP-KWJ": [{ label: "C (프레스티지)", lf: 44.1 }, { label: "Y (일반 정상)", lf: 33.7 }, { label: "M (일반 할인)", lf: 39.6 }, { label: "V (특가)",      lf: 52.3 }],
+  "GMP-KPO": [{ label: "C (프레스티지)", lf: 41.8 }, { label: "Y (일반 정상)", lf: 35.2 }, { label: "M (일반 할인)", lf: 41.9 }, { label: "V (특가)",      lf: 55.1 }],
+  "GMP-RSU": [{ label: "C (프레스티지)", lf: 38.4 }, { label: "Y (일반 정상)", lf: 29.6 }, { label: "M (일반 할인)", lf: 34.7 }, { label: "V (특가)",      lf: 47.9 }],
 };
 
+// 노선별 편명 LF — 인기편(오전 출발)은 높고, 비인기편(오후 늦음)은 낮음
 const MOCK_ROUTE_LF: Record<string, { label: string; lf: number }[]> = {
   all: [
-    { label: "KE1201 (GMP-CJU)", lf: 79 },
-    { label: "KE1203 (GMP-CJU)", lf: 54 },
-    { label: "KE1205 (GMP-CJU)", lf: 89 },
-    { label: "KE1401 (GMP-PUS)", lf: 58 },
-    { label: "KE1801 (ICN-CJU)", lf: 87 },
-    { label: "KE1207 (GMP-CJU)", lf: 36 },
-    { label: "KE1403 (GMP-PUS)", lf: 73 },
+    { label: "KE1201 GMP-CJU", lf: 97 },
+    { label: "KE1801 ICN-CJU", lf: 95 },
+    { label: "KE1205 GMP-CJU", lf: 88 },
+    { label: "KE1901 ICN-PUS", lf: 79 },
+    { label: "KE1401 GMP-PUS", lf: 74 },
+    { label: "KE1207 GMP-CJU", lf: 48 },
+    { label: "KE2101 GMP-RSU", lf: 31 },
   ],
   "GMP-CJU": [
-    { label: "KE1201", lf: 79 }, { label: "KE1203", lf: 54 },
-    { label: "KE1205", lf: 89 }, { label: "KE1207", lf: 36 },
+    { label: "KE1201 (07:25)", lf: 97 }, { label: "KE1203 (09:40)", lf: 86 },
+    { label: "KE1205 (12:10)", lf: 88 }, { label: "KE1207 (18:50)", lf: 48 },
   ],
-  "GMP-PUS": [{ label: "KE1401", lf: 58 }, { label: "KE1403", lf: 73 }],
-  "ICN-CJU": [{ label: "KE1801", lf: 87 }, { label: "KE1803", lf: 71 }, { label: "KE1805", lf: 62 }],
-  "GMP-TAE": [{ label: "KE1601", lf: 48 }, { label: "KE1603", lf: 53 }],
-  "GMP-KWJ": [{ label: "KE1701", lf: 52 }, { label: "KE1703", lf: 57 }],
-  "ICN-PUS": [{ label: "KE1901", lf: 61 }, { label: "KE1903", lf: 66 }],
-  "GMP-KPO": [{ label: "KE2001", lf: 55 }, { label: "KE2003", lf: 59 }],
-  "GMP-RSU": [{ label: "KE2101", lf: 49 }, { label: "KE2103", lf: 53 }],
+  "ICN-CJU": [
+    { label: "KE1801 (08:15)", lf: 95 }, { label: "KE1803 (11:30)", lf: 83 },
+    { label: "KE1805 (16:00)", lf: 71 }, { label: "KE1807 (20:10)", lf: 53 },
+  ],
+  "GMP-PUS": [
+    { label: "KE1401 (07:50)", lf: 74 }, { label: "KE1403 (10:20)", lf: 68 },
+    { label: "KE1405 (14:35)", lf: 57 }, { label: "KE1407 (19:00)", lf: 43 },
+  ],
+  "ICN-PUS": [
+    { label: "KE1901 (08:40)", lf: 79 }, { label: "KE1903 (13:15)", lf: 64 },
+    { label: "KE1905 (18:30)", lf: 51 },
+  ],
+  "GMP-TAE": [
+    { label: "KE1601 (08:30)", lf: 58 }, { label: "KE1603 (12:45)", lf: 44 },
+    { label: "KE1605 (17:20)", lf: 31 },
+  ],
+  "GMP-KWJ": [
+    { label: "KE1701 (08:55)", lf: 54 }, { label: "KE1703 (13:10)", lf: 41 },
+    { label: "KE1705 (17:40)", lf: 28 },
+  ],
+  "GMP-KPO": [
+    { label: "KE2001 (09:05)", lf: 56 }, { label: "KE2003 (13:30)", lf: 43 },
+    { label: "KE2005 (18:00)", lf: 30 },
+  ],
+  "GMP-RSU": [
+    { label: "KE2101 (09:20)", lf: 47 }, { label: "KE2103 (14:00)", lf: 32 },
+    { label: "KE2105 (18:25)", lf: 19 },
+  ],
 };
 
 const MOCK_KPI: Record<string, Record<number, { revenue: number; bookings: number; avgLf: number; pending: number }>> = {
-  all:       { 1: { revenue: 344_300_000, bookings: 3325, avgLf: 74.5, pending: 3 }, 3: { revenue: 1_014_200_000, bookings: 9775, avgLf: 72.1, pending: 7 }, 7: { revenue: 2_315_600_000, bookings: 22_293, avgLf: 73.8, pending: 14 }, 10: { revenue: 3_196_000_000, bookings: 30_795, avgLf: 71.6, pending: 19 } },
-  "GMP-CJU": { 1: { revenue: 82_400_000, bookings: 795, avgLf: 79.2, pending: 1 },  3: { revenue: 248_100_000, bookings: 2401, avgLf: 77.4, pending: 3 }, 7: { revenue: 568_900_000, bookings: 5509, avgLf: 78.9, pending: 5 }, 10: { revenue: 798_400_000, bookings: 7730, avgLf: 76.3, pending: 7 } },
-  "GMP-PUS": { 1: { revenue: 42_300_000, bookings: 407, avgLf: 61.8, pending: 1 },  3: { revenue: 128_200_000, bookings: 1233, avgLf: 59.2, pending: 2 }, 7: { revenue: 294_400_000, bookings: 2835, avgLf: 60.5, pending: 4 }, 10: { revenue: 411_000_000, bookings: 3960, avgLf: 58.7, pending: 5 } },
-  "ICN-CJU": { 1: { revenue: 68_900_000, bookings: 663, avgLf: 86.1, pending: 1 },  3: { revenue: 204_000_000, bookings: 1965, avgLf: 84.3, pending: 2 }, 7: { revenue: 472_500_000, bookings: 4543, avgLf: 85.7, pending: 4 }, 10: { revenue: 664_800_000, bookings: 6398, avgLf: 83.2, pending: 6 } },
-  "GMP-TAE": { 1: { revenue: 16_900_000, bookings: 163, avgLf: 48.4, pending: 0 },  3: { revenue: 51_000_000, bookings: 491, avgLf: 46.8, pending: 1 },  7: { revenue: 117_500_000, bookings: 1130, avgLf: 47.9, pending: 2 }, 10: { revenue: 163_000_000, bookings: 1570, avgLf: 45.6, pending: 3 } },
-  "GMP-KWJ": { 1: { revenue: 13_700_000, bookings: 132, avgLf: 52.3, pending: 0 },  3: { revenue: 41_500_000, bookings: 399, avgLf: 50.7, pending: 1 },  7: { revenue: 95_500_000, bookings: 919, avgLf: 51.8, pending: 2 },  10: { revenue: 132_400_000, bookings: 1276, avgLf: 49.4, pending: 3 } },
-  "ICN-PUS": { 1: { revenue: 39_200_000, bookings: 378, avgLf: 61.2, pending: 1 },  3: { revenue: 115_600_000, bookings: 1113, avgLf: 59.6, pending: 2 }, 7: { revenue: 268_100_000, bookings: 2580, avgLf: 60.8, pending: 3 }, 10: { revenue: 375_600_000, bookings: 3617, avgLf: 58.3, pending: 4 } },
-  "GMP-KPO": { 1: { revenue: 13_200_000, bookings: 127, avgLf: 55.1, pending: 0 },  3: { revenue: 40_300_000, bookings: 388, avgLf: 53.4, pending: 1 },  7: { revenue: 92_800_000, bookings: 894, avgLf: 54.6, pending: 2 },  10: { revenue: 129_500_000, bookings: 1248, avgLf: 52.2, pending: 2 } },
-  "GMP-RSU": { 1: { revenue: 11_400_000, bookings: 110, avgLf: 49.3, pending: 0 },  3: { revenue: 34_600_000, bookings: 333, avgLf: 47.9, pending: 1 },  7: { revenue: 80_000_000, bookings: 771, avgLf: 49.1, pending: 1 },  10: { revenue: 111_700_000, bookings: 1076, avgLf: 46.8, pending: 2 } },
+  all:       { 1: { revenue: 558_900_000, bookings: 5_389, avgLf: 81.3, pending: 5 }, 3: { revenue: 1_550_200_000, bookings: 14_938, avgLf: 78.7, pending: 9 }, 7: { revenue: 3_098_300_000, bookings: 29_813, avgLf: 74.2, pending: 17 }, 10: { revenue: 3_960_500_000, bookings: 38_155, avgLf: 72.1, pending: 23 } },
+  "GMP-CJU": { 1: { revenue: 158_200_000, bookings: 1_525, avgLf: 92.6, pending: 1 }, 3: { revenue: 422_300_000, bookings: 4_068, avgLf: 88.4, pending: 3 }, 7: { revenue: 883_100_000, bookings: 8_507, avgLf: 84.9, pending: 6 }, 10: { revenue: 1_094_800_000, bookings: 10_551, avgLf: 82.3, pending: 8 } },
+  "ICN-CJU": { 1: { revenue: 122_600_000, bookings: 1_181, avgLf: 88.2, pending: 1 }, 3: { revenue: 330_800_000, bookings: 3_188, avgLf: 85.6, pending: 3 }, 7: { revenue: 686_100_000, bookings: 6_606, avgLf: 82.3, pending: 5 }, 10: { revenue: 886_900_000, bookings: 8_539, avgLf: 80.1, pending: 7 } },
+  "GMP-PUS": { 1: { revenue:  64_800_000, bookings:  624, avgLf: 67.4, pending: 1 }, 3: { revenue: 171_300_000, bookings: 1_650, avgLf: 63.8, pending: 2 }, 7: { revenue: 352_800_000, bookings: 3_398, avgLf: 61.2, pending: 4 }, 10: { revenue: 473_900_000, bookings: 4_564, avgLf: 59.7, pending: 5 } },
+  "ICN-PUS": { 1: { revenue:  61_700_000, bookings:  594, avgLf: 71.8, pending: 1 }, 3: { revenue: 163_700_000, bookings: 1_577, avgLf: 68.3, pending: 2 }, 7: { revenue: 338_400_000, bookings: 3_260, avgLf: 65.4, pending: 3 }, 10: { revenue: 432_900_000, bookings: 4_170, avgLf: 63.1, pending: 4 } },
+  "GMP-TAE": { 1: { revenue:  24_300_000, bookings:  234, avgLf: 44.3, pending: 0 }, 3: { revenue:  62_100_000, bookings:  598, avgLf: 42.7, pending: 1 }, 7: { revenue: 121_100_000, bookings: 1_166, avgLf: 43.9, pending: 2 }, 10: { revenue: 144_500_000, bookings: 1_391, avgLf: 41.6, pending: 3 } },
+  "GMP-KWJ": { 1: { revenue:  19_100_000, bookings:  184, avgLf: 41.2, pending: 0 }, 3: { revenue:  49_500_000, bookings:  477, avgLf: 39.4, pending: 1 }, 7: { revenue:  92_100_000, bookings:  887, avgLf: 40.7, pending: 1 }, 10: { revenue: 110_400_000, bookings: 1_064, avgLf: 38.2, pending: 2 } },
+  "GMP-KPO": { 1: { revenue:  17_100_000, bookings:  165, avgLf: 43.1, pending: 0 }, 3: { revenue:  43_200_000, bookings:  416, avgLf: 41.6, pending: 1 }, 7: { revenue:  83_900_000, bookings:  808, avgLf: 42.8, pending: 1 }, 10: { revenue: 103_900_000, bookings: 1_001, avgLf: 40.4, pending: 2 } },
+  "GMP-RSU": { 1: { revenue:  14_200_000, bookings:  137, avgLf: 32.9, pending: 0 }, 3: { revenue:  34_200_000, bookings:  330, avgLf: 31.3, pending: 0 }, 7: { revenue:  61_400_000, bookings:  591, avgLf: 32.8, pending: 1 }, 10: { revenue:  71_600_000, bookings:  690, avgLf: 30.7, pending: 1 } },
 };
 
 function getMockSummary(routeParam: string, days: number): DashboardSummary {
@@ -239,14 +275,124 @@ export default function Dashboard() {
     void fetchSummary();
   }, [fetchSummary]);
 
-  const totalRevenue = summary.total_revenue;
-  const totalBookings = summary.total_bookings;
-  const avgLoadFactor = summary.avg_load_factor;
+  const { flightsByRoute } = useFlightsStore();
+
+  // FareManagement에서 업데이트된 실시간 flights를 반영한 LF/수익 파생
+  const liveStats = useMemo(() => {
+    const routes = dashboardRoute === "전체" ? KE_DOMESTIC_ROUTES : [dashboardRoute];
+    const allFlights = routes.flatMap((r) => flightsByRoute[r] ?? []);
+    if (allFlights.length === 0) return null;
+
+    // 편명별 LF
+    const routeLf = allFlights.map((f) => ({
+      label: `${f.flightNo} (${f.time})`,
+      lf: f.lf,
+    }));
+
+    // 등급별 LF 집계
+    const classMap: Record<string, { sold: number; seats: number }> = {};
+    const classLabelMap: Record<string, string> = {
+      C: "C (프레스티지)", Y: "Y (일반 정상)", M: "M (일반 할인)", V: "V (특가)",
+    };
+    allFlights.forEach((f) => {
+      f.classes.forEach((c) => {
+        if (!classMap[c.code]) classMap[c.code] = { sold: 0, seats: 0 };
+        classMap[c.code].sold += c.sold;
+        classMap[c.code].seats += c.seats;
+      });
+    });
+    const classLf = ["C", "Y", "M", "V"]
+      .filter((code) => classMap[code])
+      .map((code) => ({
+        label: classLabelMap[code] ?? code,
+        lf: classMap[code].seats > 0
+          ? Math.round((classMap[code].sold / classMap[code].seats) * 1000) / 10
+          : 0,
+      }));
+
+    // 평균 LF
+    const avgLf = allFlights.length > 0
+      ? Math.round(allFlights.reduce((s, f) => s + f.lf, 0) / allFlights.length * 10) / 10
+      : 0;
+
+    // 당일 수익 (좌석별 가격 × 판매 수량 합산)
+    const todayRevenue = allFlights.reduce((sum, f) =>
+      sum + f.classes.reduce((s, c) => s + c.sold * c.price, 0), 0);
+    const todayBookings = allFlights.reduce((sum, f) =>
+      sum + f.classes.reduce((s, c) => s + c.sold, 0), 0);
+
+    // ── 대시보드 계산 로그 ──────────────────────────────────────────────────
+    console.group(`[대시보드] 데이터 계산 — 노선: ${dashboardRoute}`);
+
+    console.group('📋 편명별 L/F');
+    console.table(
+      allFlights.map((f) => ({
+        편명: f.flightNo,
+        출발시각: f.time,
+        노선: f.route,
+        'L/F (%)': f.lf,
+        상태: f.status,
+      }))
+    );
+    console.groupEnd();
+
+    console.group('🎫 등급별 L/F (판매좌석 / 전체좌석)');
+    console.table(
+      ["C", "Y", "M", "V"]
+        .filter((code) => classMap[code])
+        .map((code) => {
+          const { sold, seats } = classMap[code];
+          const lf = seats > 0 ? Math.round(sold / seats * 1000) / 10 : 0;
+          return {
+            등급: classLabelMap[code] ?? code,
+            판매좌석: sold,
+            전체좌석: seats,
+            'L/F (%)': lf,
+            계산식: `${sold} / ${seats} × 100 = ${lf}%`,
+          };
+        })
+    );
+    console.groupEnd();
+
+    console.group('💰 수익 계산 (편명별 클래스 가격 × 판매좌석)');
+    allFlights.forEach((f) => {
+      const flightRevenue = f.classes.reduce((s, c) => s + c.sold * c.price, 0);
+      console.groupCollapsed(`  ${f.flightNo} → ₩${flightRevenue.toLocaleString()}`);
+      console.table(
+        f.classes.map((c) => ({
+          클래스: c.code,
+          가격: `₩${c.price.toLocaleString()}`,
+          판매: c.sold,
+          좌석: c.seats,
+          소계: `₩${(c.sold * c.price).toLocaleString()}`,
+          상태: c.status,
+        }))
+      );
+      console.groupEnd();
+    });
+    console.groupEnd();
+
+    console.group('✅ 최종 집계');
+    console.log(`대상 편수:   ${allFlights.length}편 (${routes.join(', ')})`);
+    console.log(`평균 L/F:    ${avgLf}%  (편명별 L/F 단순평균)`);
+    console.log(`총 수익:     ₩${todayRevenue.toLocaleString()}`);
+    console.log(`총 예약:     ${todayBookings.toLocaleString()}건`);
+    console.groupEnd();
+
+    console.groupEnd();
+    // ───────────────────────────────────────────────────────────────────────
+
+    return { routeLf, classLf, avgLf, todayRevenue, todayBookings };
+  }, [flightsByRoute, dashboardRoute]);
+
+  const totalRevenue = liveStats ? liveStats.todayRevenue || summary.total_revenue : summary.total_revenue;
+  const totalBookings = liveStats ? liveStats.todayBookings || summary.total_bookings : summary.total_bookings;
+  const avgLoadFactor = liveStats ? liveStats.avgLf || summary.avg_load_factor : summary.avg_load_factor;
   const pendingRecs = summary.pending_recommendations;
   const filteredHistory = summary.revenue_history;
-  const loadFactorData = summary.route_lf;
+  const loadFactorData = liveStats ? liveStats.routeLf : summary.route_lf;
 
-  const classLfData = summary.class_lf;
+  const classLfData = liveStats ? liveStats.classLf : summary.class_lf;
   const routeLabel = dashboardRoute === "전체" ? "국내선 전체" : dashboardRoute;
   const titleText = `${routeLabel} 판매현황 (최근 ${periodDays}일)`;
 

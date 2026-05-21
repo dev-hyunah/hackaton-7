@@ -29,6 +29,7 @@ import {
 } from "../data/mockData";
 import { useFareStore } from "../stores/fareStore";
 import { useAiRecommendationStore } from "../stores/aiRecommendationStore";
+import { useFlightsStore } from "../stores/flightsStore";
 import apiClient from "../api/apiClient";
 
 const BRAND = "#002561";
@@ -424,7 +425,7 @@ function toDDMMM(dateStr: string): string {
   return `${String(d.getDate()).padStart(2, "0")}${monthLabels[d.getMonth()]}`;
 }
 
-export default function FareManagement() {
+export default function FareManagement({ refreshKey }: { refreshKey?: number }) {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
   const [calYear, setCalYear] = useState(today.getFullYear());
@@ -488,14 +489,23 @@ export default function FareManagement() {
     const parts = window.location.pathname.split("/").filter(Boolean);
     return parts.length >= 2 && parts[0] === "fares" ? "detail" : "list";
   });
-  const [lastRefreshTime, setLastRefreshTime] = useState<string>(() => {
-    const now = new Date();
-    return now.toTimeString().slice(0, 8);
-  });
   const aiRef = useRef<HTMLTextAreaElement>(null);
   const { updateFare } = useFareStore();
   const { approveRecommendation, rejectRecommendation } =
     useAiRecommendationStore();
+  const { setFlightsForRoute } = useFlightsStore();
+
+  // flights 상태 변경 시 공유 스토어도 동기화 (Dashboard 실시간 연동)
+  const setFlightsAndSync = useCallback(
+    (updated: DashboardFlight[] | ((prev: DashboardFlight[]) => DashboardFlight[])) => {
+      setFlights((prev) => {
+        const next = typeof updated === "function" ? updated(prev) : updated;
+        setFlightsForRoute(selectedRoute, next);
+        return next;
+      });
+    },
+    [selectedRoute, setFlightsForRoute],
+  );
   const [aiDetailPopup, setAiDetailPopup] = useState<{
     flightId: string;
     cls: DashboardClass;
@@ -572,7 +582,7 @@ export default function FareManagement() {
             };
           });
           if (!cancelled) {
-            setFlights(fallback);
+            setFlightsAndSync(fallback);
             setSelectedFlight(fallback[0]);
           }
           return;
@@ -595,7 +605,7 @@ export default function FareManagement() {
         const restoredFlight = urlFlightId
           ? (newFlights.find((f) => f.flightNo === urlFlightId) ?? newFlights[0])
           : newFlights[0];
-        setFlights(newFlights);
+        setFlightsAndSync(newFlights);
         setSelectedFlight(restoredFlight);
       } catch {
         if (cancelled) return;
@@ -604,7 +614,7 @@ export default function FareManagement() {
         const restoredFlight = urlFlightId
           ? (base.find((f) => f.flightNo === urlFlightId) ?? base[0])
           : base[0];
-        setFlights(base);
+        setFlightsAndSync(base);
         setSelectedFlight(restoredFlight);
       }
       setRejectedClasses(new Set());
@@ -672,6 +682,42 @@ export default function FareManagement() {
     });
   };
 
+  // 상단 새로고침 버튼 연동: refreshKey 변화 시 고객 활동 시뮬레이션 실행
+  useEffect(() => {
+    if (refreshKey === undefined || refreshKey === 0) return;
+    const doRefresh = async () => {
+      try {
+        const data = await apiClient.get<unknown[]>(
+          `/fares/${selectedRoute}?date=${selectedDate}`,
+        );
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data.map((f) => apiFlightToDashboard(f, selectedRoute));
+          const routeMap = crossRouteAiPrices[selectedRoute];
+          const withCrossAi = mapped.map((f) => {
+            const flightMap = routeMap?.[f.id];
+            if (!flightMap) return f;
+            return {
+              ...f,
+              classes: f.classes.map((c) =>
+                flightMap[c.code] != null ? { ...c, price: flightMap[c.code] } : c,
+              ),
+            };
+          });
+          const refreshed = simulateCustomerActivity(withCrossAi);
+          setFlightsAndSync(refreshed);
+          setSelectedFlight(refreshed.find((f) => f.id === selectedFlight.id) ?? refreshed[0]);
+          return;
+        }
+      } catch { /* fall through */ }
+      const base = buildDashboardFlights(selectedRoute, selectedDate);
+      const refreshed = simulateCustomerActivity(base);
+      setFlightsAndSync(refreshed);
+      setSelectedFlight(refreshed.find((f) => f.id === selectedFlight.id) ?? refreshed[0]);
+    };
+    void doRefresh();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
+
   const syncSelected = (updated: DashboardFlight[]) => {
     const found = updated.find((f) => f.id === selectedFlight.id);
     if (found) setSelectedFlight(found);
@@ -705,7 +751,7 @@ export default function FareManagement() {
           }),
         };
       });
-      setFlights(updated);
+      setFlightsAndSync(updated);
       syncSelected(updated);
       setEditState(null);
       // DB에 즉시 반영 (fire-and-forget, 오류는 콘솔 기록)
@@ -768,7 +814,7 @@ export default function FareManagement() {
     const updated = flights.map((f) =>
       f.id !== editState.flightId ? f : { ...f, classes: newClasses },
     );
-    setFlights(updated);
+    setFlightsAndSync(updated);
     syncSelected(updated);
     if (logMessages && logMessages.length > 0) {
       setInventoryLogPopup({
@@ -862,7 +908,7 @@ export default function FareManagement() {
       );
       return { ...f, currentPrice: newCurrentPrice, classes: newClasses };
     });
-    setFlights(updated);
+    setFlightsAndSync(updated);
     syncSelected(updated);
     setAiPopup(null);
     setAiQuery("");
@@ -952,7 +998,7 @@ export default function FareManagement() {
         ),
       };
     });
-    setFlights(updated);
+    setFlightsAndSync(updated);
     syncSelected(updated);
   };
 
@@ -970,7 +1016,7 @@ export default function FareManagement() {
         }),
       };
     });
-    setFlights(updated);
+    setFlightsAndSync(updated);
     syncSelected(updated);
   };
 
@@ -1786,74 +1832,6 @@ export default function FareManagement() {
                       (현재기준)
                     </span>
                   </h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      data-testid="fare-refresh-btn"
-                      onClick={async () => {
-                        try {
-                          const data = await apiClient.get<unknown[]>(
-                            `/fares/${selectedRoute}?date=${selectedDate}`,
-                          );
-                          if (Array.isArray(data) && data.length > 0) {
-                            const mapped = data.map((f) =>
-                              apiFlightToDashboard(f, selectedRoute),
-                            );
-                            const routeMap = crossRouteAiPrices[selectedRoute];
-                            const withCrossAi = mapped.map((f) => {
-                              const flightMap = routeMap?.[f.id];
-                              if (!flightMap) return f;
-                              return {
-                                ...f,
-                                classes: f.classes.map((c) =>
-                                  flightMap[c.code] != null
-                                    ? { ...c, price: flightMap[c.code] }
-                                    : c,
-                                ),
-                              };
-                            });
-                            const refreshed = simulateCustomerActivity(withCrossAi);
-                            setFlights(refreshed);
-                            setSelectedFlight(
-                              refreshed.find(
-                                (f) => f.id === selectedFlight.id,
-                              ) ?? refreshed[0],
-                            );
-                          } else {
-                            const base = buildDashboardFlights(
-                              selectedRoute,
-                              selectedDate,
-                            );
-                            const refreshed = simulateCustomerActivity(base);
-                            setFlights(refreshed);
-                            setSelectedFlight(
-                              refreshed.find((f) => f.id === selectedFlight.id) ??
-                                refreshed[0],
-                            );
-                          }
-                        } catch {
-                          const base = buildDashboardFlights(
-                            selectedRoute,
-                            selectedDate,
-                          );
-                          const refreshed = simulateCustomerActivity(base);
-                          setFlights(refreshed);
-                          setSelectedFlight(
-                            refreshed.find((f) => f.id === selectedFlight.id) ??
-                              refreshed[0],
-                          );
-                        }
-                        setLastRefreshTime(
-                          new Date().toTimeString().slice(0, 8),
-                        );
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition-all"
-                    >
-                      <RefreshCw size={12} /> 새로고침
-                    </button>
-                    <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
-                      마지막 업데이트: {lastRefreshTime}
-                    </span>
-                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
