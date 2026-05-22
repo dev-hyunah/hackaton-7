@@ -112,6 +112,7 @@ aws --profile hackathon apprunner start-deployment \
 
 | 날짜 | 커밋 | 내용 | ECR 다이제스트 | 담당 | Operation ID |
 |------|------|------|----------------|------|--------------|
+| 2026-05-22 | `144b6f0` | 최신 코드 재배포 (버그 수정) | `sha256:180f8f84...39a3412` | ha.seo@hist.co.kr | `8fbe0c4c36cd4af1afb4de00f504829a` |
 | 2026-05-22 | `7af2722` | 최신 코드 재배포 (버그 수정, /api prefix 라우팅 수정) | `sha256:8314341a...5f19130` | ha.seo@hist.co.kr | `5a9e90d381cb44fbb224832b031d76ed` |
 | 2026-05-22 | `9077590` | 최신 코드 재배포 (버그 수정) | `sha256:abe6c704...2064a441` | ha.seo@hist.co.kr | `d64539dd9da14549b0f1c93ccffd82d7` |
 
