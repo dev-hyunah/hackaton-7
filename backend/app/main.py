@@ -53,13 +53,13 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
-app.include_router(dashboard.router)
-app.include_router(fare.router)
-app.include_router(ai_recommendation.router)
-app.include_router(competitor.router)
-app.include_router(simulation.router)
-app.include_router(report.router)
-app.include_router(rm_optimize.router)
+app.include_router(dashboard.router, prefix="/api")
+app.include_router(fare.router, prefix="/api")
+app.include_router(ai_recommendation.router, prefix="/api")
+app.include_router(competitor.router, prefix="/api")
+app.include_router(simulation.router, prefix="/api")
+app.include_router(report.router, prefix="/api")
+app.include_router(rm_optimize.router, prefix="/api")
 
 
 @app.get("/health")
