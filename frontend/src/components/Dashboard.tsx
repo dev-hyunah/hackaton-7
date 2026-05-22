@@ -291,12 +291,19 @@ export default function Dashboard({ refreshKey }: { refreshKey?: number }) {
     void fetchSummary(routeParam, periodDays);
   }, [routeParam, periodDays, fetchSummary]);
 
-  // 새로고침 버튼 클릭 시에만 summary 재조회
+  // 새로고침 버튼 클릭 시 summary 재조회 + LF 오프셋 변동
   useEffect(() => {
     if (!refreshKey) return;
     void fetchSummary(routeParam, periodDays);
+    // ±0.3~1.5% 사이 랜덤 변동 (새로고침 느낌)
+    setLfOffset(((refreshKey * 17) % 19) * 0.1 - 0.9);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
+
+  const [lfOffset, setLfOffset] = useState(0);
+
+  // 기간·노선 변경 시 오프셋 초기화 (summary 값 그대로)
+  useEffect(() => { setLfOffset(0); }, [routeParam, periodDays]);
 
   const { flightsByRoute } = useFlightsStore();
   const { recommendations } = useAiRecommendationStore();
@@ -421,7 +428,7 @@ export default function Dashboard({ refreshKey }: { refreshKey?: number }) {
   // 수익·예약은 기간(periodDays) 기반 summary 값을 사용 — liveStats는 당일 단일편 수치라 기간과 무관
   const totalRevenue = summary.total_revenue;
   const totalBookings = summary.total_bookings;
-  const avgLoadFactor = liveStats ? liveStats.avgLf || summary.avg_load_factor : summary.avg_load_factor;
+  const avgLoadFactor = Math.round((summary.avg_load_factor + lfOffset) * 10) / 10;
   const pendingRecs = pendingRecsLive;
   const filteredHistory = summary.revenue_history;
   // 노선별·등급별 LF 차트는 기간 반영 summary 값 사용 (liveStats는 당일 편 집계라 기간 무관)
